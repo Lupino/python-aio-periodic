@@ -43,10 +43,9 @@ def to_bytes(s):
 
 def parseHeader(head):
     length = head[0] << 24 | head[1] << 16 | head[2] << 8 | head[3]
-    hasFd = length & 0x80000000 != 0
     length = length & ~0x80000000
 
-    return length, hasFd
+    return length
 
 def makeHeader(data):
     header = [0, 0, 0, 0]
@@ -71,7 +70,7 @@ class BaseClient(object):
     @asyncio.coroutine
     def recive(self):
         head = yield from self._reader.read(4)
-        length, hasFd = parseHeader(head)
+        length = parseHeader(head)
 
         payload = yield from self._reader.read(length)
         return payload
