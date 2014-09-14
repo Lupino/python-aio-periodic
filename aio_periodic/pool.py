@@ -32,6 +32,7 @@ class Pool(object):
                 if cl.client_id in self._locked:
                     self._locked.remove(cl.client_id)
                 self._clients.remove(cl)
+                cl.close()
 
         if client:
             self._locked.append(client.client_id)
@@ -49,4 +50,12 @@ class Pool(object):
     def release(self, client):
         if client.client_id in self._locked:
             self._locked.remove(client.client_id)
+        return self._sem.release()
+
+
+    def remove(self, client):
+        if client.client_id in self._locked:
+            self._locked.remove(client.client_id)
+        self._clients.remove(client)
+        client.close()
         return self._sem.release()
