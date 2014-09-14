@@ -23,8 +23,7 @@ class Worker(object):
             except Exception:
                 pass
         self._agent = BaseClient(reader, writer)
-        with (yield from self._locker):
-            yield from self._agent.send(utils.TYPE_WORKER)
+        yield from self._agent.send(utils.TYPE_WORKER)
         self.connected = True
         return True
 
@@ -63,17 +62,15 @@ class Worker(object):
         if payload == utils.NO_JOB or payload == utils.WAIT_JOB:
             return None
 
-        return Job(payload, self._agent, self._locker)
+        return Job(payload, self._agent)
 
 
     def add_func(self, func):
-        with (yield from self._locker):
-            yield from self._agent.send([utils.CAN_DO, func])
+        yield from self._agent.send([utils.CAN_DO, func])
 
 
     def remove_func(self, func):
-        with (yield from self._locker):
-            yield from self._agent.send(utils.CANT_DO, func)
+        yield from self._agent.send(utils.CANT_DO, func)
 
 
     def close(self):

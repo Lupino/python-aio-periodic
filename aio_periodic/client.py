@@ -22,8 +22,7 @@ class Client(object):
             except Exception:
                 pass
         self._agent = BaseClient(reader, writer)
-        with (yield from self._locker):
-            yield from self._agent.send(utils.TYPE_CLIENT)
+        yield from self._agent.send(utils.TYPE_CLIENT)
         self.connected = True
         return True
 
