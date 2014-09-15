@@ -1,7 +1,8 @@
 import asyncio
+from time import time
 
 class Pool(object):
-    def __init__(self, init, size):
+    def __init__(self, init, size, timeout = 0):
         self.init = init
         self._entryPoint = None
         self._size = size
@@ -10,6 +11,7 @@ class Pool(object):
         self._clients = []
         self._locked = []
         self._last_id = 0
+        self._timeout = timeout
 
 
     def get(self):
@@ -17,6 +19,10 @@ class Pool(object):
         client = None
         dead_clients = []
         for cl in self._clients:
+            if cl.deadline > 0 and cl.deadline < time():
+                dead_clients.append(cl)
+                continue
+
             if cl.client_id not in self._locked:
                 try:
                     if cl.ping():
@@ -26,6 +32,7 @@ class Pool(object):
                         dead_clients.append(client)
                 except:
                     dead_clients.append(client)
+
 
         if dead_clients:
             for cl in dead_clients:
@@ -41,6 +48,10 @@ class Pool(object):
         client = yield from self.init()
         self._last_id += 1
         client.client_id = self._last_id
+        client.deadline = 0
+        if self._timeout > 0:
+            client.deadline = time() + self._timeout
+
         self._locked.append(client.client_id)
 
         self._clients.append(client)
@@ -50,6 +61,11 @@ class Pool(object):
     def release(self, client):
         if client.client_id in self._locked:
             self._locked.remove(client.client_id)
+
+        if client.deadline > 0 and client.deadline < time():
+            self._clients.remove(client)
+            client.close()
+
         return self._sem.release()
 
 
