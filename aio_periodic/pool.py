@@ -20,7 +20,8 @@ class Pool(object):
         dead_clients = []
         for cl in self._clients:
             if cl.deadline > 0 and cl.deadline < time():
-                dead_clients.append(cl)
+                if cl.client_id not in self._locked:
+                    dead_clients.append(cl)
                 continue
 
             if cl.client_id not in self._locked:
