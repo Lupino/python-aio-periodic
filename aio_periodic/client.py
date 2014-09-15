@@ -58,7 +58,7 @@ class Client(object):
         with (yield from self._locker):
             yield from self._agent.send([utils.SUBMIT_JOB, json.dumps(job)])
             payload = yield from self._agent.recive()
-        if payload == b"ok":
+        if payload == utils.SUCCESS:
             return True
         else:
             return False
@@ -76,7 +76,7 @@ class Client(object):
         with (yield from self._locker):
             yield from self._agent.send([utils.DROP_FUNC, func])
             payload = yield from self._agent.recive()
-        if payload == b"ok":
+        if payload == utils.SUCCESS:
             return True
         else:
             return False
