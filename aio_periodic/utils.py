@@ -25,7 +25,7 @@ DROP_FUNC = b"\x0F"
 
 SUCCESS = b"\x10"
 
-NULL_CHAR = b"\x01"
+NULL_CHAR = b"\x00\x01"
 
 
 # client type

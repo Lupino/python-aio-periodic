@@ -8,6 +8,7 @@ class Client(object):
         self._agent = None
         self.connected = False
         self._locker = asyncio.Lock()
+        self.msgId = b"100"
 
     def _connect(self):
         if self._entryPoint.startswith("unix://"):
@@ -47,8 +48,9 @@ class Client(object):
 
     def ping(self):
         with (yield from self._locker):
-            yield from self._agent.send(utils.PING)
+            yield from self._agent.send([self.msgId, utils.PING])
             payload = yield from self._agent.recive()
+        payload = payload.split(utils.NULL_CHAR)[1]
         if payload == utils.PONG:
             return True
         return False
@@ -56,8 +58,9 @@ class Client(object):
 
     def submitJob(self, job):
         with (yield from self._locker):
-            yield from self._agent.send([utils.SUBMIT_JOB, json.dumps(job)])
+            yield from self._agent.send([self.msgId, utils.SUBMIT_JOB, json.dumps(job)])
             payload = yield from self._agent.recive()
+        payload = payload.split(utils.NULL_CHAR)[1]
         if payload == utils.SUCCESS:
             return True
         else:
@@ -66,16 +69,17 @@ class Client(object):
 
     def status(self):
         with (yield from self._locker):
-            yield from self._agent.send([utils.STATUS])
+            yield from self._agent.send([self.msgId, utils.STATUS])
             payload = yield from self._agent.recive()
-
+        payload = payload.split(utils.NULL_CHAR)[1]
         return json.loads(str(payload, "utf-8"))
 
 
     def dropFunc(self, func):
         with (yield from self._locker):
-            yield from self._agent.send([utils.DROP_FUNC, func])
+            yield from self._agent.send([self.msgId, utils.DROP_FUNC, func])
             payload = yield from self._agent.recive()
+        payload = payload.split(utils.NULL_CHAR)[1]
         if payload == utils.SUCCESS:
             return True
         else:
