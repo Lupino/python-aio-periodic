@@ -7,9 +7,8 @@ def create_unix_connection(path=None, loop=None, **kwds):
     """Similar to `create_connection` but works with UNIX Domain Sockets."""
     if loop is None:
         loop = asyncio.get_event_loop()
-    protocol = Protocol(loop=loop)
-    transport, _ = yield from loop.create_unix_connection(
-        lambda: protocol, path, **kwds)
+    transport, protocol = yield from loop.create_unix_connection(
+        Protocol, path, **kwds)
 
     return transport, protocol
 
@@ -18,9 +17,8 @@ def create_unix_connection(path=None, loop=None, **kwds):
 def create_connection(host, port, loop=None, **kwds):
     if loop is None:
         loop = asyncio.get_event_loop()
-    protocol = Protocol(loop=loop)
-    transport, _ = yield from loop.create_connection(
-        lambda: protocol, host, port, **kwds)
+    transport, protocol = yield from loop.create_connection(
+        Protocol, host, port, **kwds)
 
     return transport, protocol
 
