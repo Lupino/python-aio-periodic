@@ -79,6 +79,7 @@ class Protocol(asyncio.Protocol):
             reader.fead_eof()
 
     def set_reader(self, msgId, reader):
+        reader.set_transport(self._transport)
         self._stream_readers[msgId] = reader
 
     def remove_reader(self, msgId):

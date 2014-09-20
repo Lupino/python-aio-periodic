@@ -65,7 +65,8 @@ class ConnectionError(Exception):
 
 
 class BaseAgent(object):
-    def __init__(self, reader, writer, msgId, loop=None):
+    def __init__(self, protocol, reader, writer, msgId, loop=None):
+        self._protocol = protocol
         self._reader = reader
         self._writer = writer
         self.msgId = msgId
@@ -95,11 +96,11 @@ class BaseAgent(object):
         yield from self._writer.drain()
 
     def close(self):
-        self._writer.close()
+        self._protocol.remove_reader(self.msgId)
 
 
 def create_agent(transport, protocol, msgId, loop=None):
     reader = asyncio.StreamReader(limit=10, loop=loop)
-    reader.set_transport(transport)
+    protocol.set_reader(msgId, reader)
     writer = asyncio.StreamWriter(transport, protocol, reader, loop)
-    return BaseAgent(reader, writer, msgId, loop)
+    return BaseAgent(protocol, reader, writer, msgId, loop)
