@@ -6,7 +6,6 @@ from .protocol import open
 
 class Worker(object):
     def __init__(self):
-        self.agent = None
         self.connected = False
         self._protocol = None
         self._transport = None
