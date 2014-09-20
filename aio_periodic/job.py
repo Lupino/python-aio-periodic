@@ -4,11 +4,12 @@ from . import utils
 
 class Job(object):
 
-    def __init__(self, payload, agent):
+    def __init__(self, payload, w, agent):
         payload = payload.split(utils.NULL_CHAR)
         self.payload = json.loads(str(payload[2], "UTF-8"))
         self.job_handle = str(payload[1], "UTF-8")
         self.agent = agent
+        self._worker = w
         self.msgId = payload[0]
 
     def get(self, key, default=None):
@@ -16,13 +17,16 @@ class Job(object):
 
     def done(self):
         yield from self.agent.send([utils.JOB_DONE, self.job_handle])
+        self._worker.remove_agent(self.agent)
 
     def sched_later(self, delay):
         yield from self.agent.send(
             [utils.SCHED_LATER, self.job_handle, str(delay)])
+        self._worker.remove_agent(self.agent)
 
     def fail(self):
         yield from self.agent.send([utils.JOB_FAIL, self.job_handle])
+        self._worker.remove_agent(self.agent)
 
     @property
     def func_name(self):

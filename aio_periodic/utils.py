@@ -65,20 +65,23 @@ class ConnectionError(Exception):
 
 
 class BaseAgent(object):
-    def __init__(self, protocol, reader, writer, msgId, loop=None):
-        self._protocol = protocol
-        self._reader = reader
+    def __init__(self, writer, msgId, loop=None):
         self._writer = writer
         self.msgId = msgId
+        self._buffer = bytearray()
+        self._loop = loop
+        self._waiter = None
+
+    def feed_data(self, data):
+        self._buffer.extend(data)
+        if self._waiter:
+            self._waiter.set_result(True)
 
     @asyncio.coroutine
     def recive(self):
-        head = yield from self._reader.read(4)
-        length = parseHeader(head)
-
-        payload = yield from self._reader.read(length)
-        payload = payload.split(NULL_CHAR, 2)[1]
-        return payload
+        waiter = self._make_waiter()
+        yield from waiter
+        return self._buffer
 
     @asyncio.coroutine
     def send(self, payload):
@@ -95,12 +98,90 @@ class BaseAgent(object):
         self._writer.write(payload)
         yield from self._writer.drain()
 
+    def _make_waiter(self):
+        waiter = self._waiter
+        assert waiter is None or waiter.cancelled()
+        waiter = asyncio.Future(loop=self._loop)
+        self._waiter = waiter
+        return waiter
+
+
+def open_connection(entrypoint):
+    if entrypoint.startswith("unix://"):
+        reader, writer = yield from asyncio.open_unix_connection(entrypoint.split("://")[1])
+    else:
+        host_port = entrypoint.split("://")[1].split(":")
+        reader, writer = yield from asyncio.open_connection(host_port[0], host_port[1])
+
+    return reader, writer
+
+
+class BaseClient(object):
+    def __init__(self, clientType, loop=None):
+        self.connected = False
+        self._reader = None
+        self._writer = None
+        self._msgId = 0
+        self.agents = dict()
+        self.clientType = clientType
+        if not loop:
+            loop = asyncio.get_event_loop()
+        self.loop = loop
+
+    def _connect(self):
+        self._reader, self._writer = yield from open_connection(self._entryPoint)
+
+        self._msgId = 0
+        agent = BaseAgent(self._writer, self._msgId, self.loop)
+        yield from agent.send(self.clientType)
+        asyncio.Task(self.loop_agent())
+        self.connected = True
+        return True
+
+    def add_server(self, entryPoint):
+        self._entryPoint = entryPoint
+
+    @property
+    def agent(self):
+        self._msgId += 1
+        agent = BaseAgent(self._writer, self._msgId, self.loop)
+        self.agents[self._msgId] = agent
+        return agent
+
+    def loop_agent(self):
+        while True:
+            header = yield from self._reader.read(4)
+            length = parseHeader(header)
+            payload = yield from self._reader.read(length)
+            msgId = payload.split(NULL_CHAR, 2)[0]
+            msgId = int(msgId)
+            agent = self.agents[msgId]
+            agent.feed_data(payload)
+
+    def connect(self):
+        try:
+            ret = yield from self.ping()
+            if ret:
+                self.connected = True
+                return True
+        except Exception:
+            pass
+
+        print("Try to reconnecting %s"%(self._entryPoint))
+        connected = yield from self._connect()
+        return connected
+
+    def ping(self):
+        agent = self.agent
+        yield from agent.send([PING])
+        payload = yield from agent.recive()
+        self.agents.pop(agent.msgId)
+        if payload == PONG:
+            return True
+        return False
+
+    def remove_agent(self, agent):
+        self.agents.pop(agent.msgId)
+
     def close(self):
-        self._protocol.remove_reader(self.msgId)
-
-
-def create_agent(transport, protocol, msgId, loop=None):
-    reader = asyncio.StreamReader(limit=10, loop=loop)
-    protocol.set_reader(msgId, reader)
-    writer = asyncio.StreamWriter(transport, protocol, reader, loop)
-    return BaseAgent(protocol, reader, writer, msgId, loop)
+        self._writer.close()
