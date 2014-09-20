@@ -1,36 +1,38 @@
-from .utils import BaseClient
+from .utils import create_agent
 from . import utils
-import asyncio
+from .protocol import open
 import json
 
 class Client(object):
     def __init__(self):
-        self._agent = None
         self.connected = False
-        self._locker = asyncio.Lock()
-        self.msgId = b"100"
+        self._protocol = None
+        self._transport = None
+        self.agents = dict()
+        self._msgId = 0
 
     def _connect(self):
-        if self._entryPoint.startswith("unix://"):
-            reader, writer = yield from asyncio.open_unix_connection(self._entryPoint.split("://")[1])
-        else:
-            host_port = self._entryPoint.split("://")[1].split(":")
-            reader, writer = yield from asyncio.open_connection(host_port[0], host_port[1])
+        self._transport, self._protocol = yield from open(self._entryPoint)
 
-        if self._agent:
+        if self._transport:
             try:
-                self._agent.close()
+                self._transport.close()
             except Exception:
                 pass
-        self._agent = BaseClient(reader, writer)
-        yield from self._agent.send(utils.TYPE_CLIENT)
+        self._msgId = 0
+        agent = create_agent(self._transport, self._protocol, self._msgId)
+        yield from agent.send(utils.TYPE_CLIENT)
         self.connected = True
         return True
-
 
     def add_server(self, entryPoint):
         self._entryPoint = entryPoint
 
+    @property
+    def agent(self):
+        self._msgId += 1
+        agent = create_agent(self._transport, self._protocol, self._msgId)
+        return agent
 
     def connect(self):
         try:
@@ -45,41 +47,29 @@ class Client(object):
         connected = yield from self._connect()
         return connected
 
-
     def ping(self):
-        with (yield from self._locker):
-            yield from self._agent.send([self.msgId, utils.PING])
-            payload = yield from self._agent.recive()
-        payload = payload.split(utils.NULL_CHAR)[1]
+        yield from self.agent.send([utils.PING])
+        payload = yield from self._agent.recive()
         if payload == utils.PONG:
             return True
         return False
 
-
     def submitJob(self, job):
-        with (yield from self._locker):
-            yield from self._agent.send([self.msgId, utils.SUBMIT_JOB, json.dumps(job)])
-            payload = yield from self._agent.recive()
-        payload = payload.split(utils.NULL_CHAR)[1]
+        yield from self.agent.send([utils.SUBMIT_JOB, json.dumps(job)])
+        payload = yield from self._agent.recive()
         if payload == utils.SUCCESS:
             return True
         else:
             return False
 
-
     def status(self):
-        with (yield from self._locker):
-            yield from self._agent.send([self.msgId, utils.STATUS])
-            payload = yield from self._agent.recive()
-        payload = payload.split(utils.NULL_CHAR)[1]
+        yield from self.agent.send([utils.STATUS])
+        payload = yield from self._agent.recive()
         return json.loads(str(payload, "utf-8"))
 
-
     def dropFunc(self, func):
-        with (yield from self._locker):
-            yield from self._agent.send([self.msgId, utils.DROP_FUNC, func])
-            payload = yield from self._agent.recive()
-        payload = payload.split(utils.NULL_CHAR)[1]
+        yield from self.agent.send([utils.DROP_FUNC, func])
+        payload = yield from self._agent.recive()
         if payload == utils.SUCCESS:
             return True
         else:

@@ -49,6 +49,7 @@ def parseHeader(head):
 
     return length
 
+
 def makeHeader(data):
     header = [0, 0, 0, 0]
     length = len(data)
@@ -63,11 +64,11 @@ class ConnectionError(Exception):
     pass
 
 
-class BaseClient(object):
-    def __init__(self, reader, writer):
+class BaseAgent(object):
+    def __init__(self, reader, writer, msgId, loop=None):
         self._reader = reader
         self._writer = writer
-
+        self.msgId = msgId
 
     @asyncio.coroutine
     def recive(self):
@@ -75,8 +76,8 @@ class BaseClient(object):
         length = parseHeader(head)
 
         payload = yield from self._reader.read(length)
+        payload = payload.split(NULL_CHAR, 2)[1]
         return payload
-
 
     @asyncio.coroutine
     def send(self, payload):
@@ -85,11 +86,19 @@ class BaseClient(object):
             payload = NULL_CHAR.join(payload)
         elif isinstance(payload, str):
             payload = bytes(payload, 'utf-8')
+        if self.msgId > 0:
+            msgId = bytes(str(self.msgId), "utf-8")
+            payload = msgId + NULL_CHAR + payload
         header = makeHeader(payload)
         self._writer.write(header)
         self._writer.write(payload)
         yield from self._writer.drain()
 
-
     def close(self):
         self._writer.close()
+
+
+def create_agent(transport, protocol, msgId, loop=None):
+    reader = asyncio.StreamReader(limit=10, loop=loop)
+    writer = asyncio.StreamWriter(transport, protocol, reader, loop)
+    return BaseAgent(reader, writer, msgId, loop)
