@@ -36,7 +36,7 @@ def open(entrypoint):
     return transport, protocol
 
 
-class Protocol(asyncio.FlowControlMixin, asyncio.Protocol):
+class Protocol(asyncio.Protocol):
     """Helper class to adapt between Protocol and StreamReader.
 
     (This is a helper class instead of making StreamReader itself a
