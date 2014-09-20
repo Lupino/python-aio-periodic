@@ -100,5 +100,6 @@ class BaseAgent(object):
 
 def create_agent(transport, protocol, msgId, loop=None):
     reader = asyncio.StreamReader(limit=10, loop=loop)
+    reader.set_transport(transport)
     writer = asyncio.StreamWriter(transport, protocol, reader, loop)
     return BaseAgent(reader, writer, msgId, loop)

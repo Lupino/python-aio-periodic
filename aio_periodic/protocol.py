@@ -45,8 +45,7 @@ class Protocol(asyncio.Protocol):
     call inappropriate methods of the protocol.)
     """
 
-    def __init__(self, loop=None):
-        super().__init__(loop=loop)
+    def __init__(self):
         self._stream_readers = {}
         self._transport = None
         self._buffer = bytearray()
