@@ -11,7 +11,7 @@ class Client(BaseClient):
         agent = self.agent
         yield from agent.send([utils.SUBMIT_JOB, json.dumps(job)])
         payload = yield from agent.recive()
-        self.agents.remove_agent(agent)
+        self.remove_agent(agent)
         if payload == utils.SUCCESS:
             return True
         else:
@@ -21,14 +21,14 @@ class Client(BaseClient):
         agent = self.agent
         yield from agent.send([utils.STATUS])
         payload = yield from agent.recive()
-        self.agents.remove_agent(agent)
+        self.remove_agent(agent)
         return json.loads(str(payload, "utf-8"))
 
     def dropFunc(self, func):
         agent = self.agent
         yield from agent.send([utils.DROP_FUNC, func])
         payload = yield from agent.recive()
-        self.agents.remove_agent(agent)
+        self.remove_agent(agent)
         if payload == utils.SUCCESS:
             return True
         else:
