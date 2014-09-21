@@ -10,7 +10,6 @@ class Job(object):
         self.job_handle = str(payload[1], "UTF-8")
         self.agent = agent
         self._worker = w
-        self.msgId = payload[0]
 
     def get(self, key, default=None):
         return self.payload.get(key, default)

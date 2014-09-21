@@ -153,10 +153,10 @@ class BaseClient(object):
             header = yield from self._reader.read(4)
             length = parseHeader(header)
             payload = yield from self._reader.read(length)
-            msgId = payload.split(NULL_CHAR, 2)[0]
-            msgId = int(msgId)
+            payload = payload.split(NULL_CHAR, 2)
+            msgId = int(payload[0])
             agent = self.agents[msgId]
-            agent.feed_data(payload)
+            agent.feed_data(payload[1])
 
     def connect(self):
         try:
