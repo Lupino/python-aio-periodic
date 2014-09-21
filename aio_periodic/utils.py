@@ -184,4 +184,5 @@ class BaseClient(object):
         self.agents.pop(agent.msgId)
 
     def close(self):
-        self._writer.close()
+        if self._writer:
+            self._writer.close()

@@ -14,7 +14,7 @@ class Pool(object):
 
     def get(self):
         yield from self._sem.acquire()
-        if self._deadline < time():
+        if self._deadline > 0 and self.client and self._deadline < time():
             self.client.close()
             self.client = None
         if self.client:
