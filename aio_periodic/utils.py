@@ -110,10 +110,12 @@ class BaseAgent(object):
 
 def open_connection(entrypoint):
     if entrypoint.startswith("unix://"):
-        reader, writer = yield from asyncio.open_unix_connection(entrypoint.split("://")[1])
+        reader, writer = yield from asyncio.open_unix_connection(
+            entrypoint.split("://")[1])
     else:
         host_port = entrypoint.split("://")[1].split(":")
-        reader, writer = yield from asyncio.open_connection(host_port[0], host_port[1])
+        reader, writer = yield from asyncio.open_connection(host_port[0],
+                                                            host_port[1])
 
     return reader, writer
 
@@ -131,7 +133,8 @@ class BaseClient(object):
         self.loop = loop
 
     def _connect(self):
-        self._reader, self._writer = yield from open_connection(self._entryPoint)
+        self._reader, self._writer = yield from open_connection(
+            self._entryPoint)
 
         self._msgId = 0
         agent = BaseAgent(self._writer, self._msgId, self.loop)
