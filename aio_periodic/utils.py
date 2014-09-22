@@ -183,7 +183,7 @@ class BaseClient(object):
         return False
 
     def remove_agent(self, agent):
-        self.agents.pop(agent.msgId)
+        self.agents.pop(agent.msgId, None)
 
     def close(self):
         if self._writer:
