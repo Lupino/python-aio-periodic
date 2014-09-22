@@ -153,7 +153,7 @@ class BaseClient(object):
             header = yield from self._reader.read(4)
             length = parseHeader(header)
             payload = yield from self._reader.read(length)
-            payload = payload.split(NULL_CHAR, 2)
+            payload = payload.split(NULL_CHAR, 1)
             msgId = int(payload[0])
             agent = self.agents[msgId]
             agent.feed_data(payload[1])
