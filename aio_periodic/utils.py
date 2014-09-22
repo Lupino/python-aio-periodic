@@ -81,7 +81,9 @@ class BaseAgent(object):
     def recive(self):
         waiter = self._make_waiter()
         yield from waiter
-        return self._buffer
+        buf = bytes(self._buffer)
+        self._buffer.clear()
+        return buf
 
     @asyncio.coroutine
     def send(self, payload):
