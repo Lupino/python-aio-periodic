@@ -18,6 +18,13 @@ class Pool(object):
             self.client.close()
             self.client = None
         if self.client:
+            try:
+                yield from self.client.ping()
+            except:
+                self.client.close()
+                self.client = None
+
+        if self.client:
             return self.client
         client = yield from self.init()
         if self._timeout > 0:
@@ -26,8 +33,5 @@ class Pool(object):
         self.client = client
         return client
 
-    def release(self, client):
-        return self._sem.release()
-
-    def remove(self, client):
+    def release(self):
         return self._sem.release()
