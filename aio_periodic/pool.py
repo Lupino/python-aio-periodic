@@ -7,13 +7,13 @@ class Pool(object):
         self._entryPoint = None
         self._size = size
         self._sem = asyncio.Semaphore(size)
+        self.locker = asyncio.Lock()
 
         self._timeout = timeout
         self._deadline = 0
         self.client = None
 
-    def get(self):
-        yield from self._sem.acquire()
+    def _get(self):
         if self._deadline > 0 and self.client and self._deadline < time():
             self.client.close()
             self.client = None
@@ -32,6 +32,13 @@ class Pool(object):
 
         self.client = client
         return client
+
+    def get(self):
+        with (yield from self.locker):
+            client = yield from self._get()
+            yield from self._sem.acquire()
+            return client
+
 
     def release(self):
         return self._sem.release()
