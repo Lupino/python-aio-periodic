@@ -22,7 +22,19 @@ class Client(BaseClient):
         yield from agent.send([utils.STATUS])
         payload = yield from agent.recive()
         self.remove_agent(agent)
-        return json.loads(str(payload, "utf-8"))
+        payload = str(payload, 'utf-8').strip()
+        stats = payload.split('\n')
+        retval = {}
+        for stat in stats:
+            stat = stat.split(",")
+            retval[stat[0]] = {
+                'func_name': stat[0],
+                'worker_count': stat[1],
+                'job_count': stat[2],
+                'processing': stat[3]
+            }
+
+        return retval
 
     def dropFunc(self, func):
         agent = self.agent
