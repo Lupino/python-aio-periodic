@@ -125,7 +125,8 @@ class BaseClient(object):
         self.connected = False
         self._reader = None
         self._writer = None
-        self._msgId = 0
+        self._lastMsgId = 0
+        self._remainMsgIds = []
         self.agents = dict()
         self.clientType = clientType
         if not loop:
@@ -136,8 +137,9 @@ class BaseClient(object):
         self._reader, self._writer = yield from open_connection(
             self._entryPoint)
 
-        self._msgId = 0
-        agent = BaseAgent(self._writer, self._msgId, self.loop)
+        self._lastMsgId = 0
+        self._remainMsgIds = []
+        agent = BaseAgent(self._writer, self._lastMsgId, self.loop)
         yield from agent.send(self.clientType)
         asyncio.Task(self.loop_agent())
         self.connected = True
@@ -148,9 +150,13 @@ class BaseClient(object):
 
     @property
     def agent(self):
-        self._msgId += 1
-        agent = BaseAgent(self._writer, self._msgId, self.loop)
-        self.agents[self._msgId] = agent
+        if self._remainMsgIds:
+            msgId = self._remainMsgIds.pop()
+        else:
+            self._lastMsgId += 1
+            msgId = self._lastMsgId
+        agent = BaseAgent(self._writer, msgId, self.loop)
+        self.agents[msgId] = agent
         return agent
 
     def loop_agent(self):
@@ -187,6 +193,7 @@ class BaseClient(object):
 
     def remove_agent(self, agent):
         self.agents.pop(agent.msgId, None)
+        self._remainMsgIds.append(agent.msgId)
 
     def close(self):
         if self._writer:
