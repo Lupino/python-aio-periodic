@@ -29,9 +29,9 @@ class Client(BaseClient):
             stat = stat.split(",")
             retval[stat[0]] = {
                 'func_name': stat[0],
-                'worker_count': stat[1],
-                'job_count': stat[2],
-                'processing': stat[3]
+                'worker_count': int(stat[1]),
+                'job_count': int(stat[2]),
+                'processing': int(stat[3])
             }
 
         return retval
