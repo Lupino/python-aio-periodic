@@ -5,9 +5,9 @@ NOOP        = b"\x00"
 # for job
 GRAB_JOB    = b"\x01"
 SCHED_LATER = b"\x02"
-JOB_DONE    = b"\x03"
-JOB_FAIL    = b"\x04"
-WAIT_JOB    = b"\x05"
+WORK_DONE    = b"\x03"
+WORK_FAIL    = b"\x04"
+JOB_ASSIGN    = b"\x05"
 NO_JOB      = b"\x06"
 # for func
 CAN_DO      = b"\x07"

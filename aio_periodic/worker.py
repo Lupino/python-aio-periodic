@@ -12,10 +12,12 @@ class Worker(BaseClient):
         agent = self.agent
         yield from agent.send([utils.GRAB_JOB])
         payload = yield from agent.recive()
-        if payload == utils.NO_JOB or payload == utils.WAIT_JOB:
+        cmd = payload[0]
+        if payload[0] == utils.NO_JOB[0] and cmd != utils.JOB_ASSIGN[0]:
             self.remove_agent(agent)
             return None
 
+        payload = payload[3:]
         return Job(payload, self, agent)
 
     def add_func(self, func):
