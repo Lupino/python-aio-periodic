@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.6
+- update procotol add magic header
+
 ## 0.1.5
 - update procotol name
 
