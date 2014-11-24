@@ -27,6 +27,9 @@ SUCCESS = b"\x10"
 
 NULL_CHAR = b"\x00\x01"
 
+MAGIC_REQUEST   = b"\x00REQ"
+MAGIC_RESPONSE  = b"\x00RES"
+
 
 # client type
 
@@ -96,6 +99,7 @@ class BaseAgent(object):
             msgId = bytes(str(self.msgId), "utf-8")
             payload = msgId + NULL_CHAR + payload
         header = makeHeader(payload)
+        self._writer.write(MAGIC_REQUEST)
         self._writer.write(header)
         self._writer.write(payload)
         yield from self._writer.drain()
@@ -161,6 +165,9 @@ class BaseClient(object):
 
     def loop_agent(self):
         while True:
+            magic = yield from self._reader.read(4)
+            if magic != MAGIC_RESPONSE:
+                raise Exception("Magic not match.")
             header = yield from self._reader.read(4)
             length = parseHeader(header)
             payload = yield from self._reader.read(length)
