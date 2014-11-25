@@ -24,6 +24,7 @@ STATUS = b"\x0E"
 DROP_FUNC = b"\x0F"
 
 SUCCESS = b"\x10"
+REMOVE_JOB = b'\x11'
 
 NULL_CHAR = b"\x00\x01"
 
