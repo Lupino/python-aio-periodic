@@ -167,6 +167,8 @@ class BaseClient(object):
     def loop_agent(self):
         while True:
             magic = yield from self._reader.read(4)
+            if not magic:
+                break
             if magic != MAGIC_RESPONSE:
                 raise Exception("Magic not match.")
             header = yield from self._reader.read(4)
