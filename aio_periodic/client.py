@@ -36,6 +36,9 @@ class Client(BaseClient):
         stats = payload.split('\n')
         retval = {}
         for stat in stats:
+            stat = stat.strip()
+            if not stat:
+                continue
             stat = stat.split(",")
             retval[stat[0]] = {
                 'func_name': stat[0],
