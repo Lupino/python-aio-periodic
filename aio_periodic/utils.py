@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 
 
 NOOP        = b"\x00"
@@ -69,9 +70,9 @@ class ConnectionError(Exception):
 
 
 class BaseAgent(object):
-    def __init__(self, writer, msgId, loop=None):
+    def __init__(self, writer, uuid, loop=None):
         self._writer = writer
-        self.msgId = msgId
+        self.uuid = uuid
         self._buffer = bytearray()
         self._loop = loop
         self._waiter = None
@@ -96,9 +97,9 @@ class BaseAgent(object):
             payload = NULL_CHAR.join(payload)
         elif isinstance(payload, str):
             payload = bytes(payload, 'utf-8')
-        if self.msgId > 0:
-            msgId = bytes(str(self.msgId), "utf-8")
-            payload = msgId + NULL_CHAR + payload
+        if self.uuid:
+            uuid = self.uuid.bytes
+            payload = uuid + NULL_CHAR + payload
         header = makeHeader(payload)
         self._writer.write(MAGIC_REQUEST)
         self._writer.write(header)
@@ -130,8 +131,6 @@ class BaseClient(object):
         self.connected = False
         self._reader = None
         self._writer = None
-        self._lastMsgId = 0
-        self._remainMsgIds = []
         self.agents = dict()
         self.clientType = clientType
         if not loop:
@@ -142,9 +141,7 @@ class BaseClient(object):
         self._reader, self._writer = yield from open_connection(
             self._entryPoint)
 
-        self._lastMsgId = 0
-        self._remainMsgIds = []
-        agent = BaseAgent(self._writer, self._lastMsgId, self.loop)
+        agent = BaseAgent(self._writer, None, self.loop)
         yield from agent.send(self.clientType)
         asyncio.Task(self.loop_agent())
         self.connected = True
@@ -155,13 +152,9 @@ class BaseClient(object):
 
     @property
     def agent(self):
-        if self._remainMsgIds:
-            msgId = self._remainMsgIds.pop()
-        else:
-            self._lastMsgId += 1
-            msgId = self._lastMsgId
-        agent = BaseAgent(self._writer, msgId, self.loop)
-        self.agents[msgId] = agent
+        uuid = uuid.uuid1()
+        agent = BaseAgent(self._writer, uuid, self.loop)
+        self.agents[uuid] = agent
         return agent
 
     def loop_agent(self):
@@ -175,8 +168,8 @@ class BaseClient(object):
             length = parseHeader(header)
             payload = yield from self._reader.read(length)
             payload = payload.split(NULL_CHAR, 1)
-            msgId = int(payload[0])
-            agent = self.agents[msgId]
+            uuid = uuid.UUID(bytes=payload[0])
+            agent = self.agents[uuid]
             agent.feed_data(payload[1])
 
     def connect(self):
@@ -196,14 +189,13 @@ class BaseClient(object):
         agent = self.agent
         yield from agent.send([PING])
         payload = yield from agent.recive()
-        self.agents.pop(agent.msgId)
+        self.agents.pop(agent.uuid)
         if payload == PONG:
             return True
         return False
 
     def remove_agent(self, agent):
-        self.agents.pop(agent.msgId, None)
-        self._remainMsgIds.append(agent.msgId)
+        self.agents.pop(agent.uuid, None)
 
     def close(self):
         if self._writer:
