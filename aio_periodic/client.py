@@ -1,6 +1,5 @@
 from .utils import BaseClient, TYPE_CLIENT
 from . import utils
-import json
 
 class Client(BaseClient):
 
@@ -9,7 +8,7 @@ class Client(BaseClient):
 
     def submitJob(self, job):
         agent = self.agent
-        yield from agent.send([utils.SUBMIT_JOB, json.dumps(job)])
+        yield from agent.send([utils.SUBMIT_JOB, utils.encodeJob(job)])
         payload = yield from agent.recive()
         self.remove_agent(agent)
         if payload == utils.SUCCESS:
@@ -19,7 +18,7 @@ class Client(BaseClient):
 
     def removeJob(self, job):
         agent = self.agent
-        yield from agent.send([utils.REMOVE_JOB, json.dumps(job)])
+        yield from agent.send([utils.REMOVE_JOB, utils.encodeJob(job)])
         payload = yield from agent.recive()
         self.remove_agent(agent)
         if payload == utils.SUCCESS:

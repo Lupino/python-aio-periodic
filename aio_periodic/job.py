@@ -1,13 +1,12 @@
-import json
 from . import utils
-
 
 class Job(object):
 
     def __init__(self, payload, w, agent):
-        payload = payload.split(utils.NULL_CHAR)
-        self.payload = json.loads(str(payload[1], "UTF-8"))
-        self.job_handle = str(payload[0], "UTF-8")
+        payload = payload.split(utils.NULL_CHAR, 2)
+        self.payload = utils.decodeJob(payload[2])
+        self.job_handle = utils.to_str(payload[1])
+
         self.agent = agent
         self._worker = w
 
