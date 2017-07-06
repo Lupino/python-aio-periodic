@@ -43,7 +43,8 @@ class Client(BaseClient):
                 'func_name': stat[0],
                 'worker_count': int(stat[1]),
                 'job_count': int(stat[2]),
-                'processing': int(stat[3])
+                'processing': int(stat[3]),
+                'sched_at': int(stat[4])
             }
 
         return retval
