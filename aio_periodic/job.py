@@ -3,9 +3,12 @@ from . import utils
 class Job(object):
 
     def __init__(self, payload, w, agent):
-        payload = payload.split(utils.NULL_CHAR, 2)
-        self.payload = utils.decodeJob(payload[2])
-        self.job_handle = utils.to_str(payload[1])
+        h = utils.decode_int8(payload[0:1])
+        self.job_handle = payload[0:h + 1]
+
+        payload = payload[h+1:]
+
+        self.payload = utils.decode_job(payload)
 
         self.agent = agent
         self._worker = w
@@ -17,9 +20,17 @@ class Job(object):
         yield from self.agent.send([utils.WORK_DONE, self.job_handle])
         self._worker.remove_agent(self.agent)
 
+    def data(self, buf):
+        yield from self.agent.send([utils.WORK_DATA, self.job_handle, buf])
+        self._worker.remove_agent(self.agent)
+
     def sched_later(self, delay):
-        yield from self.agent.send(
-            [utils.SCHED_LATER, self.job_handle, str(delay)])
+        yield from self.agent.send([
+            utils.SCHED_LATER,
+            self.job_handle,
+            utils.encode_int64(delay),
+            utils.encode_int16(0)
+        ])
         self._worker.remove_agent(self.agent)
 
     def fail(self):
@@ -32,20 +43,16 @@ class Job(object):
 
     @property
     def name(self):
-        return self.payload.get("name")
+        return self.payload.get('name')
 
     @property
     def sched_at(self):
-        return self.payload["sched_at"]
+        return self.payload['sched_at']
 
     @property
     def timeout(self):
-        return self.payload.get("timeout", 0)
-
-    @property
-    def run_at(self):
-        return self.payload.get("run_at", self.sched_at)
+        return self.payload.get('timeout', 0)
 
     @property
     def workload(self):
-        return self.payload.get("workload")
+        return self.payload.get('workload')

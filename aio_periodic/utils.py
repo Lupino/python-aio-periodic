@@ -1,48 +1,50 @@
 import asyncio
-import uuid
+import struct
+import os
 
 
-NOOP        = b"\x00"
+NOOP           = b'\x00'
 # for job
-GRAB_JOB    = b"\x01"
-SCHED_LATER = b"\x02"
-WORK_DONE    = b"\x03"
-WORK_FAIL    = b"\x04"
-JOB_ASSIGN    = b"\x05"
-NO_JOB      = b"\x06"
+GRAB_JOB       = b'\x01'
+SCHED_LATER    = b'\x02'
+JOB_DONE       = b'\x03'
+JOB_FAIL       = b'\x04'
+JOB_ASSIGN     = b'\x05'
+NO_JOB         = b'\x06'
 # for func
-CAN_DO      = b"\x07"
-CANT_DO     = b"\x08"
+CAN_DO         = b'\x07'
+BROADCAST      = b'\x15'
+CANT_DO        = b'\x08'
 # for test
-PING        = b"\x09"
-PONG        = b"\x0A"
+PING           = b'\x09'
+PONG           = b'\x0A'
 # other
-SLEEP       = b"\x0B"
-UNKNOWN     = b"\x0C"
+SLEEP          = b'\x0B'
+UNKNOWN        = b'\x0C'
 # client command
-SUBMIT_JOB = b"\x0D"
-STATUS = b"\x0E"
-DROP_FUNC = b"\x0F"
+SUBMIT_JOB     = b'\x0D'
+STATUS         = b'\x0E'
+DROP_FUNC      = b'\x0F'
+REMOVE_JOB     = b'\x11'
 
-SUCCESS = b"\x10"
-REMOVE_JOB = b'\x11'
+RUN_JOB        = b'\x19'
+WORK_DATA      = b'\x1A'
 
-NULL_CHAR = b"\x00\x01"
+SUCCESS        = b'\x10'
 
-MAGIC_REQUEST   = b"\x00REQ"
-MAGIC_RESPONSE  = b"\x00RES"
-
+MAGIC_REQUEST  = b'\x00REQ'
+MAGIC_RESPONSE = b'\x00RES'
 
 # client type
 
-TYPE_CLIENT = b"\x01"
-TYPE_WORKER = b"\x02"
+TYPE_CLIENT = b'\x01'
+TYPE_WORKER = b'\x02'
 
 def to_bytes(s):
     if isinstance(s, bytes):
         return s
     elif isinstance(s, str):
-        return bytes(s, "utf-8")
+        return bytes(s, 'utf-8')
     else:
         return bytes(str(s), 'utf-8')
 
@@ -79,9 +81,9 @@ class ConnectionError(Exception):
 
 
 class BaseAgent(object):
-    def __init__(self, writer, uuid, loop=None):
+    def __init__(self, writer, msgid, loop=None):
         self._writer = writer
-        self.uuid = uuid
+        self.msgid = msgid
         self._buffer = bytearray()
         self._loop = loop
         self._waiter = None
@@ -102,17 +104,13 @@ class BaseAgent(object):
     @asyncio.coroutine
     def send(self, payload):
         if isinstance(payload, list):
-            payload = [to_bytes(p) for p in payload]
-            payload = NULL_CHAR.join(payload)
+            payload = b''.join([to_bytes(p) for p in payload])
         elif isinstance(payload, str):
             payload = bytes(payload, 'utf-8')
-        if self.uuid:
-            uuid = self.uuid.bytes
-            payload = uuid + NULL_CHAR + payload
+        if self.msgid:
+            payload = msgid + payload
         header = makeHeader(payload)
-        self._writer.write(MAGIC_REQUEST)
-        self._writer.write(header)
-        self._writer.write(payload)
+        self._writer.write(MAGIC_REQUEST + encode_int32(payload))
         yield from self._writer.drain()
 
     def _make_waiter(self):
@@ -124,11 +122,11 @@ class BaseAgent(object):
 
 
 def open_connection(entrypoint):
-    if entrypoint.startswith("unix://"):
+    if entrypoint.startswith('unix://'):
         reader, writer = yield from asyncio.open_unix_connection(
-            entrypoint.split("://")[1])
+            entrypoint.split('://')[1])
     else:
-        host_port = entrypoint.split("://")[1].split(":")
+        host_port = entrypoint.split('://')[1].split(':')
         reader, writer = yield from asyncio.open_connection(host_port[0],
                                                             host_port[1])
 
@@ -161,9 +159,9 @@ class BaseClient(object):
 
     @property
     def agent(self):
-        uuid = uuid.uuid1()
-        agent = BaseAgent(self._writer, uuid, self.loop)
-        self.agents[uuid] = agent
+        msgid = msgid.msgid1()
+        agent = BaseAgent(self._writer, msgid, self.loop)
+        self.agents[msgid] = agent
         return agent
 
     def loop_agent(self):
@@ -172,14 +170,13 @@ class BaseClient(object):
             if not magic:
                 break
             if magic != MAGIC_RESPONSE:
-                raise Exception("Magic not match.")
+                raise Exception('Magic not match.')
             header = yield from self._reader.read(4)
-            length = parseHeader(header)
+            length = decode_int32(header)
             payload = yield from self._reader.read(length)
-            payload = payload.split(NULL_CHAR, 1)
-            uuid = uuid.UUID(bytes=payload[0])
-            agent = self.agents[uuid]
-            agent.feed_data(payload[1])
+            msgid = payload[0:4]
+            agent = self.agents[msgid]
+            agent.feed_data(payload[4:])
 
     def connect(self):
         try:
@@ -190,48 +187,83 @@ class BaseClient(object):
         except Exception:
             pass
 
-        print("Try to reconnecting %s"%(self._entryPoint))
+        print('Try to reconnecting %s'%(self._entryPoint))
         connected = yield from self._connect()
         return connected
 
     def ping(self):
         agent = self.agent
-        yield from agent.send([PING])
+        yield from agent.send(PING)
         payload = yield from agent.recive()
-        self.agents.pop(agent.uuid)
+        self.agents.pop(agent.msgid)
         if payload == PONG:
             return True
         return False
 
     def remove_agent(self, agent):
-        self.agents.pop(agent.uuid, None)
+        self.agents.pop(agent.msgid, None)
 
     def close(self):
         if self._writer:
             self._writer.close()
 
-def encodeJob(job):
-    ret = [to_bytes(job['func']), to_bytes(job['name'])]
-    if job.get('workload') or job.get('count', 0) > 0 or job.get('sched_at', 0) > 0:
-        ret.append(to_bytes(job.get('sched_at', 0)))
-    if job.get('workload') or job.get('count', 0) > 0:
-        ret.append(to_bytes(job.get('count', 0)))
-    if job.get('workload'):
-        ret.append(to_bytes(job.get('workload', b'')))
-    return NULL_CHAR.join(ret)
+def encode_str8(data = b''):
+    return encode_int8(len(data)) + data
 
-def decodeJob(payload):
-    parts = payload.split(NULL_CHAR, 4)
-    size = len(parts)
+def encode_str32(data = b''):
+    return encode_int32(len(data)) + data
 
-    job = {
-        'func': to_str(parts[0]),
-        'name': to_str(parts[1]),
-    }
-    if size > 2:
-      job['sched_at'] = to_int(parts[2])
-    if size > 3:
-      job['count'] = to_int(parts[3])
-    if size > 4:
-      job['workload'] = parts[4]
+def encode_int8(n = 0):
+    return struct.pack('>B', n)
+
+def encode_int16(n = 0):
+    return struct.pack('>H', n)
+
+def encode_int32(n = 0):
+    return struct.pack('>I', n)
+
+def encode_int64(n = 0):
+    return struct.pack('>Q', n)
+
+def decode_int8(n):
+    return struct.unpack('>B', n)
+
+def decode_int16(n):
+    return struct.unpack('>H', n)
+
+def decode_int32(n):
+    return struct.unpack('>I', n)
+
+def decode_int64(n):
+    return struct.unpack('>Q', n)
+
+def encode_job(job):
+    return ''.join([
+        encode_str8(job['func']),
+        encode_str8(job['name']),
+        encode_str32(job.get('workload', b'')),
+        encode_int64(job.get('sched_at', 0)),
+        encode_int32(job.get('count', 0))
+    ])
+
+def decode_job(payload):
+    job = {}
+
+    h = decode_int8(payload[0:1])
+    job['func'] = payload[1:h + 1]
+
+    payload = payload[h + 1:]
+
+    h = decode_int8(payload[0:1])
+    job['name'] = payload[1:h + 1]
+
+    payload = payload[h + 1:]
+
+    h = decode_int32(payload[0:4])
+    job['workload'] = payload[4:h+4]
+    payload = payload[h+4:]
+
+    job['sched_at'] = decode_int64(payload[0:8])
+
+    job['count'] = decode_int16(payload[8:12])
     return job

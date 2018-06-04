@@ -6,7 +6,7 @@ class Client(BaseClient):
     def __init__(self):
         BaseClient.__init__(self, TYPE_CLIENT)
 
-    def submitJob(self, job):
+    def submit_job(self, job):
         agent = self.agent
         yield from agent.send([utils.SUBMIT_JOB, utils.encodeJob(job)])
         payload = yield from agent.recive()
@@ -16,7 +16,14 @@ class Client(BaseClient):
         else:
             return False
 
-    def removeJob(self, job):
+    def run_job(self, job):
+        agent = self.agent
+        yield from agent.send([utils.RUN_JOB, utils.encodeJob(job)])
+        payload = yield from agent.recive()
+        self.remove_agent(agent)
+        return payload
+
+    def remove_job(self, job):
         agent = self.agent
         yield from agent.send([utils.REMOVE_JOB, utils.encodeJob(job)])
         payload = yield from agent.recive()
@@ -28,7 +35,7 @@ class Client(BaseClient):
 
     def status(self):
         agent = self.agent
-        yield from agent.send([utils.STATUS])
+        yield from agent.send(utils.STATUS)
         payload = yield from agent.recive()
         self.remove_agent(agent)
         payload = str(payload, 'utf-8').strip()
@@ -38,7 +45,7 @@ class Client(BaseClient):
             stat = stat.strip()
             if not stat:
                 continue
-            stat = stat.split(",")
+            stat = stat.split(',')
             retval[stat[0]] = {
                 'func_name': stat[0],
                 'worker_count': int(stat[1]),
@@ -49,9 +56,9 @@ class Client(BaseClient):
 
         return retval
 
-    def dropFunc(self, func):
+    def drop_func(self, func):
         agent = self.agent
-        yield from agent.send([utils.DROP_FUNC, func])
+        yield from agent.send([utils.DROP_FUNC, utils.encode_str8(func)])
         payload = yield from agent.recive()
         self.remove_agent(agent)
         if payload == utils.SUCCESS:
