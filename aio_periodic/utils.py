@@ -59,22 +59,6 @@ def to_str(s):
 def to_int(s):
     return int(s)
 
-def parseHeader(head):
-    length = head[0] << 24 | head[1] << 16 | head[2] << 8 | head[3]
-    length = length & ~0x80000000
-
-    return length
-
-
-def makeHeader(data):
-    header = [0, 0, 0, 0]
-    length = len(data)
-    header[0] = chr(length >> 24 & 0xff)
-    header[1] = chr(length >> 16 & 0xff)
-    header[2] = chr(length >> 8 & 0xff)
-    header[3] = chr(length >> 0 & 0xff)
-    return bytes(''.join(header), 'utf-8')
-
 
 class ConnectionError(Exception):
     pass
@@ -109,7 +93,6 @@ class BaseAgent(object):
             payload = bytes(payload, 'utf-8')
         if self.msgid:
             payload = msgid + payload
-        header = makeHeader(payload)
         self._writer.write(MAGIC_REQUEST + encode_int32(payload))
         yield from self._writer.drain()
 
