@@ -1,5 +1,6 @@
-from .utils import BaseClient, TYPE_CLIENT
-from . import utils
+from .types.utils import TYPE_CLIENT
+from .types.base_client import BaseClient
+from .types import command as cmd
 
 class Client(BaseClient):
 
@@ -8,34 +9,34 @@ class Client(BaseClient):
 
     def submit_job(self, job):
         agent = self.agent
-        yield from agent.send([utils.SUBMIT_JOB, utils.encodeJob(job)])
+        yield from agent.send(cmd.SubmitJob(job))
         payload = yield from agent.recive()
         self.remove_agent(agent)
-        if payload == utils.SUCCESS:
+        if payload == cmd.SUCCESS:
             return True
         else:
             return False
 
     def run_job(self, job):
         agent = self.agent
-        yield from agent.send([utils.RUN_JOB, utils.encodeJob(job)])
+        yield from agent.send(cmd.RunJob(job))
         payload = yield from agent.recive()
         self.remove_agent(agent)
         return payload
 
     def remove_job(self, job):
         agent = self.agent
-        yield from agent.send([utils.REMOVE_JOB, utils.encodeJob(job)])
+        yield from agent.send(cmd.RemoveJob(job))
         payload = yield from agent.recive()
         self.remove_agent(agent)
-        if payload == utils.SUCCESS:
+        if payload == cmd.SUCCESS:
             return True
         else:
             return False
 
     def status(self):
         agent = self.agent
-        yield from agent.send(utils.STATUS)
+        yield from agent.send(cmd.Status())
         payload = yield from agent.recive()
         self.remove_agent(agent)
         payload = str(payload, 'utf-8').strip()
@@ -58,10 +59,10 @@ class Client(BaseClient):
 
     def drop_func(self, func):
         agent = self.agent
-        yield from agent.send([utils.DROP_FUNC, utils.encode_str8(func)])
+        yield from agent.send(cmd.DropFunc(func))
         payload = yield from agent.recive()
         self.remove_agent(agent)
-        if payload == utils.SUCCESS:
+        if payload == cmd.SUCCESS:
             return True
         else:
             return False

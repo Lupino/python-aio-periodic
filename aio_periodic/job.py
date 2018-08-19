@@ -1,4 +1,6 @@
-from . import utils
+from .types import utils
+from .types.job import Job as J
+from .types import command as cmd
 
 class Job(object):
 
@@ -8,51 +10,43 @@ class Job(object):
 
         payload = payload[h+1:]
 
-        self.payload = utils.decode_job(payload)
+        self.payload = J.build(payload)
 
         self.agent = agent
         self._worker = w
 
-    def get(self, key, default=None):
-        return self.payload.get(key, default)
-
     def done(self):
-        yield from self.agent.send([utils.WORK_DONE, self.job_handle])
+        yield from self.agent.send(cmd.WorkDone(self.job_handle))
         self._worker.remove_agent(self.agent)
 
     def data(self, buf):
-        yield from self.agent.send([utils.WORK_DATA, self.job_handle, buf])
+        yield from self.agent.send(cmd.WorkData(self.job_handle, buf))
         self._worker.remove_agent(self.agent)
 
-    def sched_later(self, delay):
-        yield from self.agent.send([
-            utils.SCHED_LATER,
-            self.job_handle,
-            utils.encode_int64(delay),
-            utils.encode_int16(0)
-        ])
+    def sched_later(self, delay, count = 0):
+        yield from self.agent.send(cmd.SchedLater(self.job_handle, delay, count))
         self._worker.remove_agent(self.agent)
 
     def fail(self):
-        yield from self.agent.send([utils.WORK_FAIL, self.job_handle])
+        yield from self.agent.send(cmd.WorkFail(self.job_handle))
         self._worker.remove_agent(self.agent)
 
     @property
     def func_name(self):
-        return self.payload['func']
+        return self.payload.func
 
     @property
     def name(self):
-        return self.payload.get('name')
+        return self.payload.name
 
     @property
     def sched_at(self):
-        return self.payload['sched_at']
+        return self.payload.sched_at
 
     @property
     def timeout(self):
-        return self.payload.get('timeout', 0)
+        return self.payload.timeout
 
     @property
     def workload(self):
-        return self.payload.get('workload')
+        return self.payload.workload
