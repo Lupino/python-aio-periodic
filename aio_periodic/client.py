@@ -24,9 +24,9 @@ class Client(BaseClient):
         self.remove_agent(agent)
         return payload
 
-    def remove_job(self, job):
+    def remove_job(self, func, name):
         agent = self.agent
-        yield from agent.send(cmd.RemoveJob(job))
+        yield from agent.send(cmd.RemoveJob(func, name))
         payload = yield from agent.recive()
         self.remove_agent(agent)
         if payload == cmd.SUCCESS:

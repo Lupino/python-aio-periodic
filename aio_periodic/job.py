@@ -15,12 +15,8 @@ class Job(object):
         self.agent = agent
         self._worker = w
 
-    def done(self):
-        yield from self.agent.send(cmd.WorkDone(self.job_handle))
-        self._worker.remove_agent(self.agent)
-
-    def data(self, buf):
-        yield from self.agent.send(cmd.WorkData(self.job_handle, buf))
+    def done(self, buf = b''):
+        yield from self.agent.send(cmd.WorkDone(self.job_handle, buf))
         self._worker.remove_agent(self.agent)
 
     def sched_later(self, delay, count = 0):

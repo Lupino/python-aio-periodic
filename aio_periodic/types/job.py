@@ -1,5 +1,5 @@
 from .utils import encode_str8, encode_str32, encode_int32, encode_int64, \
-        decode_int8, decode_int16, decode_int32, decode_int64
+        decode_int8, decode_int16, decode_int32, decode_int64, encode_int8
 
 class Job(object):
     def __init__(self, func, name, workload = b'', sched_at = 0, count = 0):
@@ -10,12 +10,17 @@ class Job(object):
         self.count = count
 
     def pack(self):
+        buf = b''
+        ver = 0
+        if ver == 1:
+            buf = encode_int32(self.count)
         return b''.join([
             encode_str8(self.func),
             encode_str8(self.name),
             encode_str32(self.workload),
             encode_int64(self.sched_at),
-            encode_int32(self.count)
+            encode_int8(ver),
+            buf
         ])
 
     @classmethod
@@ -38,7 +43,14 @@ class Job(object):
 
         job['sched_at'] = decode_int64(payload[0:8])
 
-        job['count'] = decode_int16(payload[8:12])
+        payload = payload[8:]
+
+        ver = decode_int8(payload[0:1])
+
+        payload = payload[1:]
+
+        if ver == 1:
+            job['count'] = decode_int16(payload[0:4])
 
         return cls(**job)
 

@@ -25,7 +25,6 @@ DROP_FUNC      = b'\x0F'
 REMOVE_JOB     = b'\x11'
 
 RUN_JOB        = b'\x19'
-WORK_DATA      = b'\x1A'
 
 SUCCESS        = b'\x10'
 
@@ -73,8 +72,8 @@ class SchedLater(Command):
 
 
 class WorkDone(Command):
-    def __init__(self, job_handle):
-        Command.__init__(self, [WORK_DONE, job_handle])
+    def __init__(self, job_handle, buf = b''):
+        Command.__init__(self, [WORK_DONE, job_handle, buf])
 
 
 class WorkFail(Command):
@@ -113,15 +112,10 @@ class DropFunc(Command):
 
 
 class RemoveJob(Command):
-    def __init__(self, job):
-        Command.__init__(self, [REMOVE_JOB, bytes(job)])
+    def __init__(self, func, name):
+        Command.__init__(self, [REMOVE_JOB, utils.encode_str8(func), utils.encode_str8(name)])
 
 
 class RunJob(Command):
     def __init__(self, job):
         Command.__init__(self, [RUN_JOB, bytes(job)])
-
-
-class WorkData(Command):
-    def __init__(self, job_handle, buf):
-        Command.__init__(self, [WORK_DATA, job_handle, buf])
