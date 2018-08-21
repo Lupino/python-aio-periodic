@@ -2,6 +2,7 @@ import asyncio
 from .agent import Agent
 from .utils import decode_int32, MAGIC_RESPONSE
 import uuid
+from .command import PING, PONG
 
 class BaseClient(object):
     def __init__(self, clientType, loop=None):
