@@ -5,22 +5,24 @@ class Agent(object):
     def __init__(self, writer, msgid, loop=None):
         self._writer = writer
         self.msgid = msgid
-        self._buffer = bytearray()
+        self._buffer = []
         self._loop = loop
         self._waiter = None
 
     def feed_data(self, data):
-        self._buffer.extend(data)
+        self._buffer.append(data)
         if self._waiter:
             self._waiter.set_result(True)
 
     @asyncio.coroutine
     def recive(self):
-        waiter = self._make_waiter()
-        yield from waiter
-        buf = bytes(self._buffer)
-        self._buffer.clear()
-        return buf
+        if len(self._buffer) == 0:
+            waiter = self._make_waiter()
+            yield from waiter
+        return self._buffer.pop()
+
+    def buffer_len(self):
+        return len(self._buffer)
 
     @asyncio.coroutine
     def send(self, cmd):
