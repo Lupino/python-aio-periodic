@@ -4,40 +4,40 @@ from .types import command as cmd
 
 class Client(BaseClient):
 
-    def __init__(self):
-        BaseClient.__init__(self, TYPE_CLIENT)
+    def __init__(self, loop=None):
+        BaseClient.__init__(self, TYPE_CLIENT, loop)
 
-    def submit_job(self, job):
+    async def submit_job(self, job):
         agent = self.agent
-        yield from agent.send(cmd.SubmitJob(job))
-        payload = yield from agent.recive()
+        await agent.send(cmd.SubmitJob(job))
+        payload = await agent.recive()
         self.remove_agent(agent)
         if payload == cmd.SUCCESS:
             return True
         else:
             return False
 
-    def run_job(self, job):
+    async def run_job(self, job):
         agent = self.agent
-        yield from agent.send(cmd.RunJob(job))
-        payload = yield from agent.recive()
+        await agent.send(cmd.RunJob(job))
+        payload = await agent.recive()
         self.remove_agent(agent)
         return payload
 
-    def remove_job(self, func, name):
+    async def remove_job(self, func, name):
         agent = self.agent
-        yield from agent.send(cmd.RemoveJob(func, name))
-        payload = yield from agent.recive()
+        await agent.send(cmd.RemoveJob(func, name))
+        payload = await agent.recive()
         self.remove_agent(agent)
         if payload == cmd.SUCCESS:
             return True
         else:
             return False
 
-    def status(self):
+    async def status(self):
         agent = self.agent
-        yield from agent.send(cmd.Status())
-        payload = yield from agent.recive()
+        await agent.send(cmd.Status())
+        payload = await agent.recive()
         self.remove_agent(agent)
         payload = str(payload, 'utf-8').strip()
         stats = payload.split('\n')
@@ -57,10 +57,10 @@ class Client(BaseClient):
 
         return retval
 
-    def drop_func(self, func):
+    async def drop_func(self, func):
         agent = self.agent
-        yield from agent.send(cmd.DropFunc(func))
-        payload = yield from agent.recive()
+        await agent.send(cmd.DropFunc(func))
+        payload = await agent.recive()
         self.remove_agent(agent)
         if payload == cmd.SUCCESS:
             return True

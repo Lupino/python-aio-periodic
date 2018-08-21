@@ -14,23 +14,21 @@ class Agent(object):
         if self._waiter:
             self._waiter.set_result(True)
 
-    @asyncio.coroutine
-    def recive(self):
+    async def recive(self):
         if len(self._buffer) == 0:
             waiter = self._make_waiter()
-            yield from waiter
+            await waiter
         return self._buffer.pop()
 
     def buffer_len(self):
         return len(self._buffer)
 
-    @asyncio.coroutine
-    def send(self, cmd):
+    async def send(self, cmd):
         payload = bytes(cmd)
         if self.msgid:
-            payload = msgid + payload
+            payload = self.msgid + payload
         self._writer.write(MAGIC_REQUEST + encode_str32(payload))
-        yield from self._writer.drain()
+        await self._writer.drain()
 
     def _make_waiter(self):
         waiter = self._waiter

@@ -12,6 +12,8 @@ class Job(object):
     def pack(self):
         buf = b''
         ver = 0
+        if self.count > 0:
+            ver = 1
         if ver == 1:
             buf = encode_int32(self.count)
         return b''.join([
@@ -50,7 +52,7 @@ class Job(object):
         payload = payload[1:]
 
         if ver == 1:
-            job['count'] = decode_int16(payload[0:4])
+            job['count'] = decode_int32(payload[0:4])
 
         return cls(**job)
 

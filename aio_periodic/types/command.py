@@ -1,4 +1,5 @@
 from . import utils
+from .utils import to_bytes
 
 NOOP           = b'\x00'
 # for job
@@ -27,15 +28,6 @@ REMOVE_JOB     = b'\x11'
 RUN_JOB        = b'\x19'
 
 SUCCESS        = b'\x10'
-
-
-def to_bytes(s):
-    if isinstance(s, bytes):
-        return s
-    elif isinstance(s, str):
-        return bytes(s, 'utf-8')
-    else:
-        return bytes(str(s), 'utf-8')
 
 
 class Command(object):

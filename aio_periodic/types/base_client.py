@@ -1,10 +1,12 @@
 import asyncio
 from .agent import Agent
-from .utils import decode_int32
+from .utils import decode_int32, MAGIC_RESPONSE
+import uuid
 
 class BaseClient(object):
     def __init__(self, clientType, loop=None):
         self.connected = False
+        self.connid = None
         self._reader = None
         self._writer = None
         self._clientType = clientType
@@ -13,40 +15,50 @@ class BaseClient(object):
             loop = asyncio.get_event_loop()
         self.loop = loop
 
-    def connect(self, reader, writer, clientType):
+    async def connect(self, reader, writer):
         self._writer = writer
         self._reader = reader
         agent = Agent(self._writer, None, self.loop)
-        yield from agent.send(slef._clientType)
-        asyncio.Task(self.loop_agent())
+        await agent.send(self._clientType)
+        self.loop.create_task(self.loop_agent())
         self.connected = True
         return True
 
     @property
     def agent(self):
-        msgid = msgid.msgid1()
+        msgid = bytes(uuid.uuid4().hex[:4], 'utf-8')
         agent = Agent(self._writer, msgid, self.loop)
         self.agents[msgid] = agent
         return agent
 
-    def loop_agent(self):
-        while True:
-            magic = yield from self._reader.read(4)
+    async def loop_agent(self):
+        async def receive():
+            magic = await self._reader.read(4)
             if not magic:
-                break
+                self.close()
+                raise Exception("Closed")
             if magic != MAGIC_RESPONSE:
+                self.close()
                 raise Exception('Magic not match.')
-            header = yield from self._reader.read(4)
+            header = await self._reader.read(4)
             length = decode_int32(header)
-            payload = yield from self._reader.read(length)
-            msgid = payload[0:4]
-            agent = self.agents[msgid]
-            agent.feed_data(payload[4:])
+            payload = await self._reader.read(length)
+            return payload
 
-    def ping(self):
+        self.connid = await receive()
+        while True:
+            payload = await receive()
+            msgid = payload[0:4]
+            agent = self.agents.get(msgid)
+            if agent:
+                agent.feed_data(payload[4:])
+            else:
+                print('Agent %s not found.'%msgid)
+
+    async def ping(self):
         agent = self.agent
-        yield from agent.send(PING)
-        payload = yield from agent.recive()
+        await agent.send(PING)
+        payload = await agent.recive()
         self.agents.pop(agent.msgid)
         if payload == PONG:
             return True

@@ -15,25 +15,22 @@ class Job(object):
         self.agent = agent
         self._worker = w
 
-    def done(self, buf = b''):
-        yield from self.agent.send(cmd.WorkDone(self.job_handle, buf))
-        self._worker.remove_agent(self.agent)
+    async def done(self, buf = b''):
+        await self.agent.send(cmd.WorkDone(self.job_handle, buf))
 
-    def sched_later(self, delay, count = 0):
-        yield from self.agent.send(cmd.SchedLater(self.job_handle, delay, count))
-        self._worker.remove_agent(self.agent)
+    async def sched_later(self, delay, count = 0):
+        await self.agent.send(cmd.SchedLater(self.job_handle, delay, count))
 
-    def fail(self):
-        yield from self.agent.send(cmd.WorkFail(self.job_handle))
-        self._worker.remove_agent(self.agent)
+    async def fail(self):
+        await self.agent.send(cmd.WorkFail(self.job_handle))
 
     @property
     def func_name(self):
-        return self.payload.func
+        return str(self.payload.func, 'utf-8')
 
     @property
     def name(self):
-        return self.payload.name
+        return str(self.payload.name, 'utf-8')
 
     @property
     def sched_at(self):
