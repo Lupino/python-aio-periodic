@@ -13,7 +13,7 @@ class Job(object):
     def pack(self):
         buf = b''
         ver = 0
-        if self.count > 0 && self.timeout > 0:
+        if self.count > 0 and self.timeout > 0:
             ver = 3
         if self.timeout > 0:
             ver = 2
