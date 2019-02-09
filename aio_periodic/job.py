@@ -5,12 +5,10 @@ from .types import command as cmd
 class Job(object):
 
     def __init__(self, payload, w, agent):
-        h = utils.decode_int8(payload[0:1])
-        self.job_handle = payload[0:h + 1]
-
-        payload = payload[h+1:]
 
         self.payload = J.build(payload)
+
+        self.job_handle = utils.encode_str8(self.payload.func) + utils.encode_str8(self.payload.name)
 
         self.agent = agent
         self._worker = w
