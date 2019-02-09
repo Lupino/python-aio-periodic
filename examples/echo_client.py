@@ -8,7 +8,7 @@ async def main(loop):
     await client.connect(reader, writer)
 
     job = Job(func='echo', name='test_echo')
-    job2 = Job(func='echo', name='test_echo2', sched_at=int(time()) + 10000)
+    job2 = Job(func='echo', name='test_echo2', sched_at=int(time()) + 10000, timeout=10)
     job3 = Job(func='echo', name='test_echo3', sched_at=int(time()) + 1)
     job4 = Job(func='echo2', name='test_echo3', sched_at=int(time()) + 1)
     job5 = Job(func='echo_later', name='test_echo_later')
