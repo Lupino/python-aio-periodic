@@ -7,12 +7,13 @@ class Agent(object):
         self.msgid = msgid
         self._buffer = []
         self._loop = loop
-        self._waiter = None
+        self._waiters = []
 
     def feed_data(self, data):
-        self._buffer.append(data)
-        if self._waiter:
-            self._waiter.set_result(True)
+        self._buffer.insert(0, data)
+        if len(self._waiters) > 0:
+            waiter = self._waiters.pop()
+            waiter.set_result(True)
 
     async def recive(self):
         if len(self._buffer) == 0:
@@ -31,8 +32,6 @@ class Agent(object):
         await self._writer.drain()
 
     def _make_waiter(self):
-        waiter = self._waiter
-        assert waiter is None or waiter.cancelled()
         waiter = asyncio.Future(loop=self._loop)
-        self._waiter = waiter
+        self._waiters.insert(0, waiter)
         return waiter

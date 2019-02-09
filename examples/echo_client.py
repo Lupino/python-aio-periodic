@@ -27,6 +27,9 @@ async def main(loop):
     print(await client.status())
     print(await client.run_job(job5))
 
+    for i in range(0, 100):
+        job6 = Job(func='test_lock', name='test_lock_' + str(i))
+        await client.submit_job(job6)
 
 
 loop = asyncio.get_event_loop()

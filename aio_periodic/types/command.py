@@ -27,6 +27,10 @@ REMOVE_JOB     = b'\x11'
 
 RUN_JOB        = b'\x19'
 
+ACQUIRED       = b'\x1A'
+ACQUIRE        = b'\x1B'
+RELEASE        = b'\x1C'
+
 SUCCESS        = b'\x10'
 
 
@@ -111,3 +115,14 @@ class RemoveJob(Command):
 class RunJob(Command):
     def __init__(self, job):
         Command.__init__(self, [RUN_JOB, bytes(job)])
+
+
+class Acquire(Command):
+    def __init__(self, name, count, handle):
+        Command.__init__(self, [ACQUIRE, utils.encode_str8(name),
+            utils.encode_int16(count), handle])
+
+
+class Release(Command):
+    def __init__(self, name, handle):
+        Command.__init__(self, [RELEASE, utils.encode_str8(name), handle])

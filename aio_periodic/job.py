@@ -22,6 +22,23 @@ class Job(object):
     async def fail(self):
         await self.agent.send(cmd.WorkFail(self.job_handle))
 
+    async def acquire(self, name, count):
+        await self.agent.send(cmd.Acquire(name, count, self.job_handle))
+        payload = await self.agent.recive()
+        if payload[0:1] == cmd.ACQUIRED:
+            if payload[1] == 1:
+                return True
+        return False
+
+    async def release(self, name):
+        await self.agent.send(cmd.Release(name, self.job_handle))
+
+    async def with_lock(self, name, count, task):
+        acquired = await self.acquire(name, count)
+        if acquired:
+            await task()
+            await self.release(name)
+
     @property
     def func_name(self):
         return str(self.payload.func, 'utf-8')
