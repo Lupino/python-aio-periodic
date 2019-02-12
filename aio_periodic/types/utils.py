@@ -23,12 +23,18 @@ def encode_str32(data):
     return encode_int32(len(data)) + to_bytes(data)
 
 def encode_int8(n = 0):
+    if n > 0xFF:
+        raise Exception("data to large 0xFF")
     return struct.pack('>B', n)
 
 def encode_int16(n = 0):
+    if n > 0xFFFF:
+        raise Exception("data to large 0xFFFF")
     return struct.pack('>H', n)
 
 def encode_int32(n = 0):
+    if n > 0xFFFFFFFF:
+        raise Exception("data to large 0xFFFFFFFF")
     return struct.pack('>I', n)
 
 def encode_int64(n = 0):
