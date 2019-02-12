@@ -3,6 +3,7 @@ from .agent import Agent
 from .utils import decode_int32, MAGIC_RESPONSE
 import uuid
 from .command import PING, PONG
+from binascii import crc32
 
 class BaseClient(object):
     def __init__(self, clientType, loop=None):
@@ -43,7 +44,10 @@ class BaseClient(object):
                 raise Exception('Magic not match.')
             header = await self._reader.read(4)
             length = decode_int32(header)
+            crc = await self._reader.read(4)
             payload = await self._reader.read(length)
+            if decode_int32(crc) != crc32(payload):
+                raise Exception('CRC not match.')
             return payload
 
         self.connid = await receive()

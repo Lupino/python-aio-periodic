@@ -1,5 +1,6 @@
 import asyncio
-from .utils import MAGIC_REQUEST, encode_str32
+from .utils import MAGIC_REQUEST, encode_int32, to_bytes
+from binascii import crc32
 
 class Agent(object):
     def __init__(self, writer, msgid, loop=None):
@@ -28,7 +29,9 @@ class Agent(object):
         payload = bytes(cmd)
         if self.msgid:
             payload = self.msgid + payload
-        self._writer.write(MAGIC_REQUEST + encode_str32(payload))
+        size = encode_int32(len(payload))
+        crc = encode_int32(crc32(to_bytes(payload)))
+        self._writer.write(MAGIC_REQUEST + size + crc + to_bytes(payload))
         await self._writer.drain()
 
     def _make_waiter(self):
