@@ -5,9 +5,10 @@ except ImportError:
 
 packages = [
     'aio_periodic',
+    'aio_periodic.types'
 ]
 
-requires = ['aio_periodic']
+requires = []
 
 setup(
     name='aio_periodic',
