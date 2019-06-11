@@ -12,7 +12,7 @@ requires = []
 
 setup(
     name='aio_periodic',
-    version='0.2.0',
+    version='0.2.1',
     description='The periodic task system client for python3 base on asyncio',
     author='Li Meng Jun',
     author_email='lmjubuntu@gmail.com',
