@@ -23,8 +23,14 @@ class BaseClient(object):
         agent = Agent(self._writer, None, self.loop)
         await agent.send(self._clientType)
         self.loop.create_task(self.loop_agent())
+        self.loop.create_task(self.check_alive())
         self.connected = True
         return True
+
+    async def check_alive(self):
+        while True:
+            await self.ping()
+            await asyncio.sleep(1)
 
     @property
     def agent(self):
