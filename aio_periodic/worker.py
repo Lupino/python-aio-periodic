@@ -55,7 +55,7 @@ class Worker(BaseClient):
                     else:
                         job = None
                         try:
-                            job = Job(payload[1:], self, self.agent)
+                            job = Job(payload[1:], self)
                         except Exception as e:
                             print('decode job failed', e, payload)
 
