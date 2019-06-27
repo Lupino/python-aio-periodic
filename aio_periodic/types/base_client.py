@@ -35,6 +35,9 @@ class BaseClient(object):
     @property
     def agent(self):
         msgid = bytes(uuid.uuid4().hex[:4], 'utf-8')
+        while self.agents.get(msgid):
+            msgid = bytes(uuid.uuid4().hex[:4], 'utf-8')
+
         agent = Agent(self._writer, msgid, self.loop)
         self.agents[msgid] = agent
         return agent
