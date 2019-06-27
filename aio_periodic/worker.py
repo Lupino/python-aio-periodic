@@ -34,24 +34,24 @@ class Worker(BaseClient):
         loop = self.loop
 
         class Work(object):
-            def __init__(self):
-                self.timer = None
+            def __init__(w):
+                w.timer = None
 
-            def run(self, delay=0):
-                if self.timer:
-                    self.timer.cancel()
-                    self.timer = None
+            def run(w, delay=0):
+                if w.timer:
+                    w.timer.cancel()
+                    w.timer = None
 
                 if delay > 0:
-                    timer = loop.call_later(delay, self.run, 0)
+                    timer = loop.call_later(delay, w.run, 0)
                 else:
-                    loop.call_soon(loop.create_task, self.send_grab_job())
+                    loop.call_soon(loop.create_task, w.send_grab_job())
 
-            async def send_grab_job(self):
+            async def send_grab_job(w):
                 if agent.buffer_len() > 0:
                     payload = await agent.recive()
                     if payload[0:1] == cmd.NO_JOB and payload[0:1] != cmd.JOB_ASSIGN:
-                        self.run(10)
+                        w.run(10)
                     else:
                         job = None
                         try:
@@ -62,10 +62,10 @@ class Worker(BaseClient):
                         if job:
                             await process_job(job)
 
-                        self.run()
+                        w.run()
                 else:
                     await agent.send(cmd.GrabJob())
-                    self.run(1)
+                    w.run(1)
 
         async def process_job(job):
             task = self._tasks.get(job.func_name)
