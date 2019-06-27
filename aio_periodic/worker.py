@@ -42,7 +42,11 @@ class Worker(BaseClient):
                 if payload[0:1] == cmd.NO_JOB and payload[0:1] != cmd.JOB_ASSIGN:
                     timer = loop.call_later(10, __work)
                 else:
-                    await process_job(Job(payload[1:], self, agent))
+                    try:
+                        await process_job(Job(payload[1:], self, agent))
+                    except Exception as e:
+                        print(e)
+                        timer = loop.call_soon(1, __work)
             else:
                 await agent.send(cmd.GrabJob())
                 timer = loop.call_later(1, __work)
