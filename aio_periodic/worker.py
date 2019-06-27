@@ -32,24 +32,40 @@ class Worker(BaseClient):
     async def _work(self):
         agent = self.agent
         loop = self.loop
-        timer = None
-        def __work():
-            loop.create_task(send_grab_job())
 
-        async def send_grab_job():
-            if agent.buffer_len() > 0:
-                payload = await agent.recive()
-                if payload[0:1] == cmd.NO_JOB and payload[0:1] != cmd.JOB_ASSIGN:
-                    timer = loop.call_later(10, __work)
+        class Work(object):
+            def __init__(self):
+                self.timer = None
+
+            def run(self, delay=0):
+                if self.timer:
+                    self.timer.cancel()
+                    self.timer = None
+
+                if delay > 0:
+                    timer = loop.call_later(delay, self.run, 0)
                 else:
-                    try:
-                        await process_job(Job(payload[1:], self, agent))
-                    except Exception as e:
-                        print(e)
-                        timer = loop.call_soon(1, __work)
-            else:
-                await agent.send(cmd.GrabJob())
-                timer = loop.call_later(1, __work)
+                    loop.call_soon(loop.create_task, self.send_grab_job())
+
+            async def send_grab_job(self):
+                if agent.buffer_len() > 0:
+                    payload = await agent.recive()
+                    if payload[0:1] == cmd.NO_JOB and payload[0:1] != cmd.JOB_ASSIGN:
+                        self.run(10)
+                    else:
+                        job = None
+                        try:
+                            job = Job(payload[1:], self, agent)
+                        except Exception as e:
+                            print('decode job failed', e, payload)
+
+                        if job:
+                            await process_job(job)
+
+                        self.run()
+                else:
+                    await agent.send(cmd.GrabJob())
+                    self.run(1)
 
         async def process_job(job):
             task = self._tasks.get(job.func_name)
@@ -60,12 +76,10 @@ class Worker(BaseClient):
                 try:
                     await task(job)
                 except Exception as e:
-                    print(e)
+                    print('process_job failed', e)
                     await job.fail()
 
-            loop.call_soon(__work)
-
-        loop.call_soon(__work)
+        Work().run()
 
     def work(self, size):
         for _ in range(size):
