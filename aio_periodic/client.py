@@ -22,6 +22,12 @@ class Client(BaseClient):
         await agent.send(cmd.RunJob(job))
         payload = await agent.recive()
         self.remove_agent(agent)
+        if payload[0] == cmd.NO_WORKER[0]:
+            raise Exception('no worker')
+
+        if payload[0] == cmd.DATA[0]:
+            return payload[1:]
+
         return payload
 
     async def remove_job(self, func, name):

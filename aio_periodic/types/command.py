@@ -31,6 +31,9 @@ ACQUIRED       = b'\x1A'
 ACQUIRE        = b'\x1B'
 RELEASE        = b'\x1C'
 
+NO_WORKER      = b'\x1D'
+DATA           = b'\x1E'
+
 SUCCESS        = b'\x10'
 
 

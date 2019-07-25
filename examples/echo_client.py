@@ -26,6 +26,10 @@ async def main(loop):
     print(await client.drop_func('echo2'))
     print(await client.status())
     print(await client.run_job(job5))
+    try:
+        print(await client.run_job(job4))
+    except Exception as e:
+        print(e)
 
     for i in range(0, 100):
         job6 = Job(func='test_lock', name='test_lock_' + str(i))
