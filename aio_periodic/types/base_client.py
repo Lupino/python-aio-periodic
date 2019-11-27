@@ -5,6 +5,10 @@ import uuid
 from .command import PING, PONG
 from binascii import crc32
 
+import logging
+
+logger = logging.getLogger('aio_periodic.types.base_client')
+
 class BaseClient(object):
     def __init__(self, clientType, loop=None):
         self.connected = False
@@ -17,19 +21,28 @@ class BaseClient(object):
             loop = asyncio.get_event_loop()
         self.loop = loop
 
+        self.loop_agent_waiter = self.loop.create_future()
+
+        self.loop.create_task(self.loop_agent())
+        self.loop.create_task(self.check_alive())
+
     async def connect(self, reader, writer):
         self._writer = writer
         self._reader = reader
         agent = Agent(self._writer, None, self.loop)
         await agent.send(self._clientType)
-        self.loop.create_task(self.loop_agent())
-        self.loop.create_task(self.check_alive())
         self.connected = True
+        self.loop_agent_waiter.set_result(True)
         return True
 
     async def check_alive(self):
         while True:
-            await self.ping()
+            if self.connected:
+                try:
+                    await self.ping()
+                except Exception as e:
+                    logger.exception(e)
+                    self.connected = False
             await asyncio.sleep(1)
 
     @property
@@ -59,15 +72,26 @@ class BaseClient(object):
                 raise Exception('CRC not match.')
             return payload
 
-        self.connid = await receive()
+        async def main_receive_loop():
+            while True:
+                payload = await receive()
+                msgid = payload[0:4]
+                agent = self.agents.get(msgid)
+                if agent:
+                    agent.feed_data(payload[4:])
+                else:
+                    logger.error('Agent %s not found.'%msgid)
+
         while True:
-            payload = await receive()
-            msgid = payload[0:4]
-            agent = self.agents.get(msgid)
-            if agent:
-                agent.feed_data(payload[4:])
-            else:
-                print('Agent %s not found.'%msgid)
+            await self.loop_agent_waiter
+            self.loop_agent_waiter = None
+            try:
+                self.connid = await receive()
+                await main_receive_loop()
+            except Exception as e:
+                logger.exception(e)
+                self.connected = False
+                self.loop_agent_waiter = self.loop.create_future()
 
     async def ping(self):
         agent = self.agent

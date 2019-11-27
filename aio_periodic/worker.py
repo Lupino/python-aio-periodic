@@ -29,7 +29,7 @@ class Worker(BaseClient):
         self.remove_agent(agent)
         self._tasks.pop(func, None)
 
-    async def _work(self):
+    def _work(self):
         agent = self.agent
         loop = self.loop
 
@@ -64,8 +64,9 @@ class Worker(BaseClient):
 
                         w.run()
                 else:
-                    await agent.send(cmd.GrabJob())
-                    w.run(1)
+                    if self.connected == True:
+                        await agent.send(cmd.GrabJob())
+                        w.run(1)
 
         async def process_job(job):
             task = self._tasks.get(job.func_name)
@@ -83,4 +84,4 @@ class Worker(BaseClient):
 
     def work(self, size):
         for _ in range(size):
-            self.loop.create_task(self._work())
+            self._work()
