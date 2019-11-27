@@ -26,13 +26,32 @@ class BaseClient(object):
         self.loop.create_task(self.loop_agent())
         self.loop.create_task(self.check_alive())
 
-    async def connect(self, reader, writer):
+        self.disconnecting_waiters = []
+
+        self._connector = None
+        self._connector_args = None
+
+    async def connect(self, connector = None, *args):
+        if connector:
+            self._connector = connector
+            self._connector_args = args
+
+        reader, writer = await self._connector(*self._connector_args)
+        if self._writer:
+            try:
+                self._writer.close()
+            except Exception as e:
+                logger.exception(e)
+
         self._writer = writer
         self._reader = reader
         agent = Agent(self._writer, None, self.loop)
         await agent.send(self._clientType)
         self.connected = True
-        self.loop_agent_waiter.set_result(True)
+
+        if self.loop_agent_waiter:
+            self.loop_agent_waiter.set_result(True)
+
         return True
 
     async def check_alive(self):
@@ -92,6 +111,18 @@ class BaseClient(object):
                 logger.exception(e)
                 self.connected = False
                 self.loop_agent_waiter = self.loop.create_future()
+                while True:
+                    asyncio.sleep(1)
+                    try:
+                        await self.connect()
+                        break
+                    except Exception as e:
+                        logger.exception(e)
+
+                waiters = self.disconnecting_waiters[:]
+                self.disconnecting_waiters = []
+                for waiter in waiters:
+                    waiter.set_result(True)
 
     async def ping(self):
         agent = self.agent
@@ -101,6 +132,11 @@ class BaseClient(object):
         if payload == PONG:
             return True
         return False
+
+    def add_lose_waiter(self):
+        waiter = self.loop.create_future()
+        self.disconnecting_waiters.append(waiter)
+        return waiter
 
     def remove_agent(self, agent):
         self.agents.pop(agent.msgid, None)

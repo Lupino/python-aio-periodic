@@ -4,6 +4,9 @@ from .types.base_client import BaseClient
 from .types import command as cmd
 import asyncio
 
+import logging
+logger = logging.getLogger('aio_periodic.worker')
+
 
 class Worker(BaseClient):
 
@@ -11,11 +14,12 @@ class Worker(BaseClient):
         BaseClient.__init__(self, TYPE_WORKER, loop)
         self._tasks = {}
 
-    async def add_func(self, func, task):
+    async def add_func(self, func, task = None):
         agent = self.agent
         await agent.send(cmd.CanDo(func))
         self.remove_agent(agent)
-        self._tasks[func] = task
+        if task:
+            self._tasks[func] = task
 
     async def broadcast(self, func, task):
         agent = self.agent
@@ -82,6 +86,19 @@ class Worker(BaseClient):
 
         Work().run()
 
-    def work(self, size):
-        for _ in range(size):
-            self._work()
+    async def work(self, size):
+        while True:
+            for _ in range(size):
+                self._work()
+
+
+            while True:
+                waiter = self.add_lose_waiter()
+                await waiter
+                try:
+                    for func in self._tasks.keys():
+                        await self.add_func(func)
+                    break
+                except Exception as e:
+                    logger.exception(e)
+                    await asyncio.sleep(2)
