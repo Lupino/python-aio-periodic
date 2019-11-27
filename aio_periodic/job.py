@@ -36,8 +36,10 @@ class Job(object):
     async def with_lock(self, name, count, task):
         acquired = await self.acquire(name, count)
         if acquired:
-            await task()
-            await self.release(name)
+            try:
+                await task()
+            finally:
+                await self.release(name)
 
     @property
     def func_name(self):
