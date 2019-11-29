@@ -33,12 +33,11 @@ class Job(object):
     async def release(self, name):
         await self.w.agent.send(cmd.Release(name, self.job_handle))
 
-    async def with_lock(self, name, count, task):
+    async def with_lock(self, name, count, task, release=False):
         acquired = await self.acquire(name, count)
         if acquired:
-            try:
-                await task()
-            finally:
+            await task()
+            if release:
                 await self.release(name)
 
     @property
