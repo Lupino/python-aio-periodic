@@ -111,13 +111,19 @@ class BaseClient(object):
                 logger.exception(e)
                 self.connected = False
                 self.loop_agent_waiter = self.loop.create_future()
+                delay = 1
                 while True:
-                    asyncio.sleep(1)
+                    asyncio.sleep(delay)
                     try:
                         await self.connect()
                         break
                     except Exception as e:
                         logger.exception(e)
+
+                    delay += 2
+
+                    if delay > 30:
+                        delay = 30
 
                 waiters = self.disconnecting_waiters[:]
                 self.disconnecting_waiters = []
