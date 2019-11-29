@@ -4,8 +4,7 @@ from time import time
 
 async def main(loop):
     client = Client(loop)
-    reader, writer = await open_connection('unix:///tmp/periodic.sock')
-    await client.connect(reader, writer)
+    await client.connect(open_connection, 'unix:///tmp/periodic.sock')
 
     job = Job(func='echo', name='test_echo')
     job2 = Job(func='echo', name='test_echo2', sched_at=int(time()) + 10000, timeout=10)
