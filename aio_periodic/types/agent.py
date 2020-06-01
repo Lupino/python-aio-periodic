@@ -35,6 +35,6 @@ class Agent(object):
         await self._writer.drain()
 
     def _make_waiter(self):
-        waiter = asyncio.create_future(loop=self._loop)
+        waiter = self._loop.create_future()
         self._waiters.insert(0, waiter)
         return waiter
