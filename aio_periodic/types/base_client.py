@@ -133,7 +133,7 @@ class BaseClient(object):
     async def ping(self):
         agent = self.agent
         await agent.send(PING)
-        payload = await agent.recive()
+        payload = await agent.receive()
         self.agents.pop(agent.msgid)
         if payload == PONG:
             return True

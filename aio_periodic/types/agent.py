@@ -16,7 +16,7 @@ class Agent(object):
             waiter = self._waiters.pop()
             waiter.set_result(True)
 
-    async def recive(self):
+    async def receive(self):
         if len(self._buffer) == 0:
             waiter = self._make_waiter()
             await waiter
@@ -35,6 +35,6 @@ class Agent(object):
         await self._writer.drain()
 
     def _make_waiter(self):
-        waiter = asyncio.Future(loop=self._loop)
+        waiter = asyncio.create_future(loop=self._loop)
         self._waiters.insert(0, waiter)
         return waiter

@@ -10,7 +10,7 @@ class Client(BaseClient):
     async def submit_job(self, job):
         agent = self.agent
         await agent.send(cmd.SubmitJob(job))
-        payload = await agent.recive()
+        payload = await agent.receive()
         self.remove_agent(agent)
         if payload == cmd.SUCCESS:
             return True
@@ -20,7 +20,7 @@ class Client(BaseClient):
     async def run_job(self, job):
         agent = self.agent
         await agent.send(cmd.RunJob(job))
-        payload = await agent.recive()
+        payload = await agent.receive()
         self.remove_agent(agent)
         if payload[0] == cmd.NO_WORKER[0]:
             raise Exception('no worker')
@@ -33,7 +33,7 @@ class Client(BaseClient):
     async def remove_job(self, func, name):
         agent = self.agent
         await agent.send(cmd.RemoveJob(func, name))
-        payload = await agent.recive()
+        payload = await agent.receive()
         self.remove_agent(agent)
         if payload == cmd.SUCCESS:
             return True
@@ -43,7 +43,7 @@ class Client(BaseClient):
     async def status(self):
         agent = self.agent
         await agent.send(cmd.Status())
-        payload = await agent.recive()
+        payload = await agent.receive()
         self.remove_agent(agent)
         payload = str(payload, 'utf-8').strip()
         stats = payload.split('\n')
@@ -66,7 +66,7 @@ class Client(BaseClient):
     async def drop_func(self, func):
         agent = self.agent
         await agent.send(cmd.DropFunc(func))
-        payload = await agent.recive()
+        payload = await agent.receive()
         self.remove_agent(agent)
         if payload == cmd.SUCCESS:
             return True

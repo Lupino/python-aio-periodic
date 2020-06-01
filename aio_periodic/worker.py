@@ -53,7 +53,7 @@ class Worker(BaseClient):
 
             async def send_grab_job(w):
                 if agent.buffer_len() > 0:
-                    payload = await agent.recive()
+                    payload = await agent.receive()
                     if payload[0:1] == cmd.NO_JOB and payload[0:1] != cmd.JOB_ASSIGN:
                         w.run(10)
                     else:
@@ -61,7 +61,7 @@ class Worker(BaseClient):
                         try:
                             job = Job(payload[1:], self)
                         except Exception as e:
-                            print('decode job failed', e, payload)
+                            logger.exception(e)
 
                         if job:
                             await process_job(job)
@@ -81,7 +81,7 @@ class Worker(BaseClient):
                 try:
                     await task(job)
                 except Exception as e:
-                    print('process_job failed', e)
+                    logger.exception(e)
                     await job.fail()
 
         Work().run()

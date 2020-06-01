@@ -24,7 +24,7 @@ class Job(object):
     async def acquire(self, name, count):
         agent = self.w.agent
         await agent.send(cmd.Acquire(name, count, self.job_handle))
-        payload = await agent.recive()
+        payload = await agent.receive()
         if payload[0:1] == cmd.ACQUIRED:
             if payload[1] == 1:
                 return True
