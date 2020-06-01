@@ -11,8 +11,11 @@ logger = logging.getLogger('aio_periodic.worker')
 class Worker(BaseClient):
 
     def __init__(self, loop=None):
-        BaseClient.__init__(self, TYPE_WORKER, loop)
+        BaseClient.__init__(self, TYPE_WORKER, loop, self._message_callback)
         self._tasks = {}
+        self._sem = None
+        self._task_size = 0
+        self._locker = asyncio.Lock()
 
     async def add_func(self, func, task = None):
         agent = self.agent
@@ -33,72 +36,55 @@ class Worker(BaseClient):
         self.remove_agent(agent)
         self._tasks.pop(func, None)
 
-    def _work(self):
+    async def _send_grab(self):
         agent = self.agent
-        loop = self.loop
+        await agent.send(cmd.GrabJob())
+        self.remove_agent(agent)
 
-        class Work(object):
-            def __init__(w):
-                w.timer = None
-
-            def run(w, delay=0):
-                if w.timer:
-                    w.timer.cancel()
-                    w.timer = None
-
-                if delay > 0:
-                    timer = loop.call_later(delay, w.run, 0)
-                else:
-                    loop.call_soon(loop.create_task, w.send_grab_job())
-
-            async def send_grab_job(w):
-                if agent.buffer_len() > 0:
-                    payload = await agent.receive()
-                    if payload[0:1] == cmd.NO_JOB and payload[0:1] != cmd.JOB_ASSIGN:
-                        w.run(10)
-                    else:
-                        job = None
-                        try:
-                            job = Job(payload[1:], self)
-                        except Exception as e:
-                            logger.exception(e)
-
-                        if job:
-                            await process_job(job)
-
-                        w.run()
-                else:
-                    if self.connected == True:
-                        await agent.send(cmd.GrabJob())
-                        w.run(1)
-
-        async def process_job(job):
-            task = self._tasks.get(job.func_name)
-            if not task:
-                await self.remove_func(job.func_name)
-                await job.fail()
-            else:
-                try:
-                    await task(job)
-                except Exception as e:
-                    logger.exception(e)
-                    await job.fail()
-
-        Work().run()
 
     async def work(self, size):
+        self._sem = asyncio.Semaphore(size)
+        agent = self.agent
+        await agent.send(cmd.GrabJob())
+
         while True:
-            for _ in range(size):
-                self._work()
+            await asyncio.sleep(10)
+            if self._sem.locked():
+                continue
+
+            if self._task_size < size:
+                await agent.send(cmd.GrabJob())
 
 
-            while True:
-                waiter = self.add_lose_waiter()
-                await waiter
-                try:
-                    for func in self._tasks.keys():
-                        await self.add_func(func)
-                    break
-                except Exception as e:
-                    logger.exception(e)
-                    await asyncio.sleep(2)
+    async def _message_callback(self, payload):
+        async with lock:
+            self._task_size += 1
+        self.loop.create_task(self.run_task(payload))
+
+
+    async def run_task(self, payload):
+        await self._sem.acquire()
+        try:
+            if self._task_size < size:
+                await self._send_grab()
+            job = Job(payload[1:], self)
+            await self.process_job(job)
+        finally:
+            self._sem.release()
+            async with lock:
+                self._task_size -= 1
+
+            await self._send_grab()
+
+
+   async def process_job(self, job):
+       task = self._tasks.get(job.func_name)
+       if not task:
+           await self.remove_func(job.func_name)
+           await job.fail()
+       else:
+           try:
+               await task(job)
+           except Exception as e:
+               logger.exception(e)
+               await job.fail()

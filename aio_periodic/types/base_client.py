@@ -2,7 +2,7 @@ import asyncio
 from .agent import Agent
 from .utils import decode_int32, MAGIC_RESPONSE
 import uuid
-from .command import PING, PONG
+from .command import PING, PONG, NO_JOB, JOB_ASSIGN
 from binascii import crc32
 
 import logging
@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger('aio_periodic.types.base_client')
 
 class BaseClient(object):
-    def __init__(self, clientType, loop=None):
+    def __init__(self, clientType, loop=None, message_callback=None):
         self.connected = False
         self.connid = None
         self._reader = None
@@ -30,6 +30,7 @@ class BaseClient(object):
 
         self._connector = None
         self._connector_args = None
+        self._cb = message_callback
 
     async def connect(self, connector = None, *args):
         if connector:
@@ -96,6 +97,15 @@ class BaseClient(object):
                 payload = await receive()
                 msgid = payload[0:4]
                 agent = self.agents.get(msgid)
+                payload = payload[4:]
+
+                if payload[0:1] == NO_JOB:
+                    continue
+                if payload[0:1] == JOB_ASSIGN:
+                    if self._cb:
+                        await self._cb(payload)
+                    continue
+
                 if agent:
                     agent.feed_data(payload[4:])
                 else:
