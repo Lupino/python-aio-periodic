@@ -123,7 +123,7 @@ class BaseClient(object):
                 self.loop_agent_waiter = self.loop.create_future()
                 delay = 1
                 while True:
-                    asyncio.sleep(delay)
+                    await asyncio.sleep(delay)
                     try:
                         await self.connect()
                         break
