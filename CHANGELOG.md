@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.7
+- fixed agent.feed_data error
+- forget await asyncio.sleep
+
 ## 0.2.6
 - fixed. typos, recive -> received
 - quick message callback
