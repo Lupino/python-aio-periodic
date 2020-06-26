@@ -107,7 +107,7 @@ class BaseClient(object):
                     continue
 
                 if agent:
-                    agent.feed_data(payload[4:])
+                    agent.feed_data(payload)
                 else:
                     logger.error('Agent %s not found.'%msgid)
 
