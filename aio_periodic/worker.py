@@ -13,10 +13,8 @@ class Worker(BaseClient):
     def __init__(self, loop=None):
         BaseClient.__init__(self, TYPE_WORKER, loop, self._message_callback)
         self._tasks = {}
-        self._sem = None
-        self._task_size = 0
         self._locker = asyncio.Lock()
-        self._work_size = 0
+        self._waiters = {}
 
     async def add_func(self, func, task = None):
         agent = self.agent
@@ -37,46 +35,39 @@ class Worker(BaseClient):
         self.remove_agent(agent)
         self._tasks.pop(func, None)
 
-    async def _send_grab(self):
-        agent = self.agent
-        await agent.send(cmd.GrabJob())
-        self.remove_agent(agent)
-
-
     async def work(self, size):
-        self._sem = asyncio.Semaphore(size)
-        self._work_size = size
+        for _ in range(size):
+            self.loop.create_task(self._work())
+
+    async def _work(self):
         agent = self.agent
-        await agent.send(cmd.GrabJob())
-
         while True:
-            await asyncio.sleep(10)
-            if self._sem.locked():
-                continue
+            await asyncio.sleep(1)
 
-            if self._task_size < self._work_size:
-                await agent.send(cmd.GrabJob())
+            async with self._locker:
+                waiter = self._waiters.pop(agent.msgid, None)
+
+            if waiter:
+                await waiter
+
+            await agent.send(cmd.GrabJob())
 
 
-    async def _message_callback(self, payload):
+
+    async def _message_callback(self, payload, msgid):
+        self.loop.create_task(self.run_task(payload, msgid))
+
+
+    async def run_task(self, payload, msgid):
+        waiter = self._loop.create_future()
         async with self._locker:
-            self._task_size += 1
-        self.loop.create_task(self.run_task(payload))
+            self._waiters[msgid] = waiter
 
-
-    async def run_task(self, payload):
-        await self._sem.acquire()
         try:
-            if self._task_size < self._work_size:
-                await self._send_grab()
             job = Job(payload[1:], self)
             await self.process_job(job)
         finally:
-            self._sem.release()
-            async with self._locker:
-                self._task_size -= 1
-
-            await self._send_grab()
+            waiter.set_result(True)
 
 
     async def process_job(self, job):

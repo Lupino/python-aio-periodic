@@ -104,7 +104,7 @@ class BaseClient(object):
                     continue
                 if payload[0:1] == JOB_ASSIGN:
                     if self._cb:
-                        await self._cb(payload)
+                        await self._cb(payload, msgid)
                     continue
 
                 if agent:
