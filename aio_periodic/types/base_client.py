@@ -125,7 +125,7 @@ class BaseClient(object):
                 logger.exception(e)
                 self.connected = False
                 self.loop_agent_waiter = self.loop.create_future()
-                delay = 1
+                delay = 0.01
                 while True:
                     await asyncio.sleep(delay)
                     try:
