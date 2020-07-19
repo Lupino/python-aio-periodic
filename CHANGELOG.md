@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.8
+- update work actions
+- fixed read buffer
+
 ## 0.2.7
 - fixed agent.feed_data error
 - forget await asyncio.sleep
