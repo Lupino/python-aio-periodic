@@ -59,7 +59,7 @@ class Worker(BaseClient):
 
 
     async def run_task(self, payload, msgid):
-        waiter = self._loop.create_future()
+        waiter = self.loop.create_future()
         async with self._locker:
             self._waiters[msgid] = waiter
 
