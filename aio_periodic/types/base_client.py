@@ -16,6 +16,7 @@ class BaseClient(object):
         self.connid = None
         self._reader = None
         self._writer = None
+        self._buffer = b''
         self._clientType = clientType
         self.agents = dict()
         if not loop:
@@ -47,6 +48,7 @@ class BaseClient(object):
 
         self._writer = writer
         self._reader = reader
+        self._buffer = b''
         agent = Agent(self._writer, None, self.loop)
         await agent.send(self._clientType)
         self.connected = True
@@ -58,6 +60,15 @@ class BaseClient(object):
                 logger.exception(e)
 
         return True
+
+    async def _receive(self, size):
+        if len(self._buffer) > size:
+            buffer = self._buffer[:size]
+            self._buffer = self._buffer[size:]
+
+        self._buffer += await self._reader.read(max(4096, size))
+
+        return await self._receive(size)
 
     async def check_alive(self):
         while True:
@@ -81,17 +92,17 @@ class BaseClient(object):
 
     async def loop_agent(self):
         async def receive():
-            magic = await self._reader.read(4)
+            magic = await self._receive(4)
             if not magic:
                 self.close()
                 raise Exception("Closed")
             if magic != MAGIC_RESPONSE:
                 self.close()
                 raise Exception('Magic not match.')
-            header = await self._reader.read(4)
+            header = await self._receive(4)
             length = decode_int32(header)
-            crc = await self._reader.read(4)
-            payload = await self._reader.read(length)
+            crc = await self._receive(4)
+            payload = await self._receive(length)
             if decode_int32(crc) != crc32(payload):
                 raise Exception('CRC not match.')
             return payload
