@@ -52,7 +52,10 @@ class BaseClient(object):
         self.connected = True
 
         if self.loop_agent_waiter:
-            self.loop_agent_waiter.set_result(True)
+            try:
+                self.loop_agent_waiter.set_result(True)
+            except Exception as e:
+                logger.exception(e)
 
         return True
 
