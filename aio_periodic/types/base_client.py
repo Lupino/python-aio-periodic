@@ -62,9 +62,10 @@ class BaseClient(object):
         return True
 
     async def _receive(self, size):
-        if len(self._buffer) > size:
-            buffer = self._buffer[:size]
+        if len(self._buffer) >= size:
+            buf = self._buffer[:size]
             self._buffer = self._buffer[size:]
+            return buf
 
         self._buffer += await self._reader.read(max(4096, size))
 
