@@ -23,6 +23,8 @@ class BaseClient(object):
             loop = asyncio.get_event_loop()
         self.loop = loop
 
+        self._on_connected = on_connected
+
         self.loop_agent_waiter = self.loop.create_future()
 
         self.loop.create_task(self.loop_agent())
@@ -49,9 +51,11 @@ class BaseClient(object):
         self._writer = writer
         self._reader = reader
         self._buffer = b''
-        agent = Agent(self._writer, None, self.loop)
+        agent = Agent(self, None, self.loop)
         await agent.send(self._clientType)
         self.connected = True
+        if self._on_connected:
+            await self._on_connected()
 
         if self.loop_agent_waiter:
             try:
