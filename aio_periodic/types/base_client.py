@@ -66,14 +66,18 @@ class BaseClient(object):
         return True
 
     async def _receive(self, size):
-        if len(self._buffer) >= size:
-            buf = self._buffer[:size]
-            self._buffer = self._buffer[size:]
-            return buf
+        while True:
+            if len(self._buffer) >= size:
+                buf = self._buffer[:size]
+                self._buffer = self._buffer[size:]
+                return buf
 
-        self._buffer += await self._reader.read(max(4096, size))
+            buf = await self._reader.read(max(4096, size))
+            if len(buf) == 0:
+                break
 
-        return await self._receive(size)
+            self._buffer += buf
+
 
     async def check_alive(self):
         while True:
