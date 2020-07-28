@@ -10,8 +10,13 @@ import logging
 
 logger = logging.getLogger('aio_periodic.types.base_client')
 
+
 class BaseClient(object):
-    def __init__(self, clientType, loop=None, message_callback=None):
+    def __init__(self,
+                 clientType,
+                 loop=None,
+                 message_callback=None,
+                 on_connected=None):
         self.connected = False
         self.connid = None
         self._reader = None
@@ -36,7 +41,7 @@ class BaseClient(object):
         self._connector_args = None
         self._cb = message_callback
 
-    async def connect(self, connector = None, *args):
+    async def connect(self, connector=None, *args):
         if connector:
             self._connector = connector
             self._connector_args = args
@@ -77,7 +82,6 @@ class BaseClient(object):
                 break
 
             self._buffer += buf
-
 
     async def check_alive(self):
         while True:
@@ -136,7 +140,7 @@ class BaseClient(object):
                 if agent:
                     agent.feed_data(payload)
                 else:
-                    logger.error('Agent %s not found.'%msgid)
+                    logger.error('Agent %s not found.' % msgid)
 
         while True:
             if self.loop_agent_waiter:
@@ -151,7 +155,6 @@ class BaseClient(object):
                 logger.exception(e)
                 self.connected = False
 
-
             self.loop_agent_waiter = self.loop.create_future()
             delay = 0
             while True:
@@ -159,7 +162,7 @@ class BaseClient(object):
                     await self.connect()
                     break
                 except Exception as e:
-                    logger.exception('try connected', e)
+                    logger.exception(e)
 
                 delay += 2
 
@@ -173,10 +176,11 @@ class BaseClient(object):
             for waiter in waiters:
                 waiter.set_result(True)
 
-    async def ping(self, timeout = 10):
+    async def ping(self, timeout=10):
         agent = self.agent
         await agent.send(PING)
         ret = self.loop.create_future()
+
         async def receive():
             payload = await agent.receive()
             self.agents.pop(agent.msgid)

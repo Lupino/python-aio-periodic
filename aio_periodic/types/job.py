@@ -1,8 +1,15 @@
 from .utils import encode_str8, encode_str32, encode_int32, encode_int64, \
         decode_int8, decode_int16, decode_int32, decode_int64, encode_int8
 
+
 class Job(object):
-    def __init__(self, func, name, workload = b'', sched_at = 0, count = 0, timeout = 0):
+    def __init__(self,
+                 func,
+                 name,
+                 workload=b'',
+                 sched_at=0,
+                 count=0,
+                 timeout=0):
         self.func = func
         self.name = name
         self.workload = workload
@@ -30,8 +37,7 @@ class Job(object):
             encode_str8(self.name),
             encode_str32(self.workload),
             encode_int64(self.sched_at),
-            encode_int8(ver),
-            buf
+            encode_int8(ver), buf
         ])
 
     @classmethod
@@ -49,8 +55,8 @@ class Job(object):
         payload = payload[h + 1:]
 
         h = decode_int32(payload[0:4])
-        job['workload'] = payload[4:h+4]
-        payload = payload[h+4:]
+        job['workload'] = payload[4:h + 4]
+        payload = payload[h + 4:]
 
         job['sched_at'] = decode_int64(payload[0:8])
 

@@ -2,20 +2,21 @@ from .types import utils
 from .types.job import Job as J
 from .types import command as cmd
 
-class Job(object):
 
+class Job(object):
     def __init__(self, payload, w):
 
         self.payload = J.build(payload)
 
-        self.job_handle = utils.encode_str8(self.payload.func) + utils.encode_str8(self.payload.name)
+        self.job_handle = utils.encode_str8(
+            self.payload.func) + utils.encode_str8(self.payload.name)
 
         self.w = w
 
-    async def done(self, buf = b''):
+    async def done(self, buf=b''):
         await self.w.agent.send(cmd.WorkDone(self.job_handle, buf))
 
-    async def sched_later(self, delay, count = 0):
+    async def sched_later(self, delay, count=0):
         await self.w.agent.send(cmd.SchedLater(self.job_handle, delay, count))
 
     async def fail(self):

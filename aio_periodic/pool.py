@@ -1,8 +1,9 @@
 import asyncio
 from time import time
 
+
 class Pool(object):
-    def __init__(self, init, size, timeout = 0):
+    def __init__(self, init, size, timeout=0):
         self.init = init
         self._entryPoint = None
         self._size = size
@@ -38,7 +39,6 @@ class Pool(object):
             client = yield from self._get()
             yield from self._sem.acquire()
             return client
-
 
     def release(self):
         return self._sem.release()

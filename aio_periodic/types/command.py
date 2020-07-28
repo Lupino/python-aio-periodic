@@ -1,40 +1,40 @@
 from . import utils
 from .utils import to_bytes
 
-NOOP           = b'\x00'
+NOOP = b'\x00'
 # for job
-GRAB_JOB       = b'\x01'
-SCHED_LATER    = b'\x02'
-WORK_DONE       = b'\x03'
-WORK_FAIL       = b'\x04'
-JOB_ASSIGN     = b'\x05'
-NO_JOB         = b'\x06'
+GRAB_JOB = b'\x01'
+SCHED_LATER = b'\x02'
+WORK_DONE = b'\x03'
+WORK_FAIL = b'\x04'
+JOB_ASSIGN = b'\x05'
+NO_JOB = b'\x06'
 # for func
-CAN_DO         = b'\x07'
-BROADCAST      = b'\x15'
-CANT_DO        = b'\x08'
+CAN_DO = b'\x07'
+BROADCAST = b'\x15'
+CANT_DO = b'\x08'
 # for test
-PING           = b'\x09'
-PONG           = b'\x0A'
+PING = b'\x09'
+PONG = b'\x0A'
 # other
-SLEEP          = b'\x0B'
-UNKNOWN        = b'\x0C'
+SLEEP = b'\x0B'
+UNKNOWN = b'\x0C'
 # client command
-SUBMIT_JOB     = b'\x0D'
-STATUS         = b'\x0E'
-DROP_FUNC      = b'\x0F'
-REMOVE_JOB     = b'\x11'
+SUBMIT_JOB = b'\x0D'
+STATUS = b'\x0E'
+DROP_FUNC = b'\x0F'
+REMOVE_JOB = b'\x11'
 
-RUN_JOB        = b'\x19'
+RUN_JOB = b'\x19'
 
-ACQUIRED       = b'\x1A'
-ACQUIRE        = b'\x1B'
-RELEASE        = b'\x1C'
+ACQUIRED = b'\x1A'
+ACQUIRE = b'\x1B'
+RELEASE = b'\x1C'
 
-NO_WORKER      = b'\x1D'
-DATA           = b'\x1E'
+NO_WORKER = b'\x1D'
+DATA = b'\x1E'
 
-SUCCESS        = b'\x10'
+SUCCESS = b'\x10'
 
 
 class Command(object):
@@ -61,17 +61,16 @@ class GrabJob(Command):
 
 
 class SchedLater(Command):
-    def __init__(self, job_handle, delay, count = 0):
+    def __init__(self, job_handle, delay, count=0):
         Command.__init__(self, [
-            SCHED_LATER,
-            job_handle,
+            SCHED_LATER, job_handle,
             utils.encode_int64(delay),
             utils.encode_int16(count)
         ])
 
 
 class WorkDone(Command):
-    def __init__(self, job_handle, buf = b''):
+    def __init__(self, job_handle, buf=b''):
         Command.__init__(self, [WORK_DONE, job_handle, buf])
 
 
@@ -112,7 +111,11 @@ class DropFunc(Command):
 
 class RemoveJob(Command):
     def __init__(self, func, name):
-        Command.__init__(self, [REMOVE_JOB, utils.encode_str8(func), utils.encode_str8(name)])
+        Command.__init__(
+            self,
+            [REMOVE_JOB,
+             utils.encode_str8(func),
+             utils.encode_str8(name)])
 
 
 class RunJob(Command):
@@ -122,8 +125,11 @@ class RunJob(Command):
 
 class Acquire(Command):
     def __init__(self, name, count, handle):
-        Command.__init__(self, [ACQUIRE, utils.encode_str8(name),
-            utils.encode_int16(count), handle])
+        Command.__init__(self, [
+            ACQUIRE,
+            utils.encode_str8(name),
+            utils.encode_int16(count), handle
+        ])
 
 
 class Release(Command):

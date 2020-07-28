@@ -76,7 +76,6 @@ class Worker(BaseClient):
         finally:
             waiter.set_result(True)
 
-
     async def process_job(self, job):
         task = self._tasks.get(job.func_name)
         if not task:
