@@ -120,7 +120,7 @@ class BaseClient(object):
             return payload
 
         async def main_receive_loop():
-            while True:
+            while self.connected:
                 payload = await receive()
                 msgid = payload[0:4]
                 agent = self.agents.get(msgid)
@@ -139,33 +139,39 @@ class BaseClient(object):
                     logger.error('Agent %s not found.'%msgid)
 
         while True:
-            await self.loop_agent_waiter
-            self.loop_agent_waiter = None
+            if self.loop_agent_waiter:
+                await self.loop_agent_waiter
+                self.loop_agent_waiter = None
+
             try:
-                self.connid = await receive()
-                await main_receive_loop()
+                if self.connected:
+                    self.connid = await receive()
+                    await main_receive_loop()
             except Exception as e:
                 logger.exception(e)
                 self.connected = False
-                self.loop_agent_waiter = self.loop.create_future()
-                delay = 0.01
-                while True:
-                    await asyncio.sleep(delay)
-                    try:
-                        await self.connect()
-                        break
-                    except Exception as e:
-                        logger.exception(e)
 
-                    delay += 2
 
-                    if delay > 30:
-                        delay = 30
+            self.loop_agent_waiter = self.loop.create_future()
+            delay = 0
+            while True:
+                try:
+                    await self.connect()
+                    break
+                except Exception as e:
+                    logger.exception('try connected', e)
 
-                waiters = self.disconnecting_waiters[:]
-                self.disconnecting_waiters = []
-                for waiter in waiters:
-                    waiter.set_result(True)
+                delay += 2
+
+                if delay > 30:
+                    delay = 30
+
+                await asyncio.sleep(delay)
+
+            waiters = self.disconnecting_waiters[:]
+            self.disconnecting_waiters = []
+            for waiter in waiters:
+                waiter.set_result(True)
 
     async def ping(self):
         agent = self.agent
