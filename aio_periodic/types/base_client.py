@@ -173,14 +173,40 @@ class BaseClient(object):
             for waiter in waiters:
                 waiter.set_result(True)
 
-    async def ping(self):
+    async def ping(self, timeout = 10):
         agent = self.agent
         await agent.send(PING)
-        payload = await agent.receive()
-        self.agents.pop(agent.msgid)
-        if payload == PONG:
-            return True
-        return False
+        ret = self.loop.create_future()
+        async def receive():
+            payload = await agent.receive()
+            self.agents.pop(agent.msgid)
+            if payload == PONG:
+                try:
+                    ret.set_result(True)
+                except Exception:
+                    pass
+            else:
+                try:
+                    ret.set_result(False)
+                except Exception:
+                    pass
+
+        async def timecheck():
+            await asyncio.sleep(timeout)
+            try:
+                ret.set_result(False)
+            except Exception:
+                pass
+
+        task1 = self.loop.create_task(receive())
+        task2 = self.loop.create_task(timecheck())
+
+        r = await ret
+
+        task1.cancel()
+        task2.cancel()
+
+        return r
 
     def add_lose_waiter(self):
         waiter = self.loop.create_future()
