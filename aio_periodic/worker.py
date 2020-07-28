@@ -50,13 +50,13 @@ class Worker(BaseClient):
             if waiter:
                 await waiter
 
-            await agent.send(cmd.GrabJob())
-
-
+            try:
+                await agent.send(cmd.GrabJob())
+            except Exception as e:
+                logger.exception(e)
 
     async def _message_callback(self, payload, msgid):
         self.loop.create_task(self.run_task(payload, msgid))
-
 
     async def run_task(self, payload, msgid):
         waiter = self.loop.create_future()

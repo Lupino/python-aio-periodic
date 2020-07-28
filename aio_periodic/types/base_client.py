@@ -87,9 +87,12 @@ class BaseClient(object):
         while self.agents.get(msgid):
             msgid = bytes(uuid.uuid4().hex[:4], 'utf-8')
 
-        agent = Agent(self._writer, msgid, self.loop)
+        agent = Agent(self, msgid, self.loop)
         self.agents[msgid] = agent
         return agent
+
+    def get_writer(self):
+        return self._writer
 
     async def loop_agent(self):
         async def receive():

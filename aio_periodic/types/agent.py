@@ -2,13 +2,14 @@ import asyncio
 from .utils import MAGIC_REQUEST, encode_int32, to_bytes
 from binascii import crc32
 
+
 class Agent(object):
-    def __init__(self, writer, msgid, loop=None):
-        self._writer = writer
+    def __init__(self, client, msgid, loop=None):
         self.msgid = msgid
         self._buffer = []
         self._loop = loop
         self._waiters = []
+        self.client = client
 
     def feed_data(self, data):
         self._buffer.insert(0, data)
@@ -31,8 +32,13 @@ class Agent(object):
             payload = self.msgid + payload
         size = encode_int32(len(payload))
         crc = encode_int32(crc32(to_bytes(payload)))
-        self._writer.write(MAGIC_REQUEST + size + crc + to_bytes(payload))
-        await self._writer.drain()
+        writer = self.client.get_writer()
+        try:
+            writer.write(MAGIC_REQUEST + size + crc + to_bytes(payload))
+            await writer.drain()
+        except Exception as e:
+            self.client.connected = False
+            raise e
 
     def _make_waiter(self):
         waiter = self._loop.create_future()
