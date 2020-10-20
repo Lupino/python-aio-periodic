@@ -106,5 +106,6 @@ class Worker(BaseClient):
     def func(self, func_name):
         def _func(task):
             self._tasks[func_name] = task
+            return task
 
         return _func
