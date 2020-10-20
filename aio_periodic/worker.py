@@ -87,3 +87,10 @@ class Worker(BaseClient):
             except Exception as e:
                 logger.exception(e)
                 await job.fail()
+
+    # decorator
+    def func(self, func_name):
+        def _func(task):
+            self._tasks[func_name] = task
+
+        return _func
