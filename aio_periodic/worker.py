@@ -32,6 +32,7 @@ class Worker(BaseClient):
     async def _add_func(self, func):
         if not self.is_enabled(func):
             return
+        logger.info('Add {}'.format(func))
         agent = self.agent
         await agent.send(cmd.CanDo(func))
         self.remove_agent(agent)
@@ -42,12 +43,14 @@ class Worker(BaseClient):
             self._tasks[func] = task
 
     async def broadcast(self, func, task):
+        logger.info('Broadcast {}'.format(func))
         agent = self.agent
         await agent.send(cmd.Broadcast(func))
         self.remove_agent(agent)
         self._tasks[func] = task
 
     async def remove_func(self, func):
+        logger.info('Remove {}'.format(func))
         agent = self.agent
         await agent.send(cmd.CantDo(func))
         self.remove_agent(agent)
