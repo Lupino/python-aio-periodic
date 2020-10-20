@@ -9,18 +9,29 @@ logger = logging.getLogger('aio_periodic.worker')
 
 
 class Worker(BaseClient):
-    def __init__(self, loop=None):
+    def __init__(self, enabled_tasks=[], loop=None):
         BaseClient.__init__(self, TYPE_WORKER, loop, self._message_callback,
                             self._on_connected)
         self._tasks = {}
         self._locker = asyncio.Lock()
         self._waiters = {}
+        self.enabled_tasks=enabled_tasks
+
+    def set_enable_tasks(self, enabled_tasks):
+        self.enabled_tasks = enabled_tasks
+
+    def is_enabled(self, func):
+        if len(self.enabled_tasks) == 0:
+            return True
+        return func in self.enabled_tasks
 
     async def _on_connected(self):
         for func in self._tasks.keys():
             await self._add_func(func)
 
     async def _add_func(self, func):
+        if not self.is_enabled(func):
+            return
         agent = self.agent
         await agent.send(cmd.CanDo(func))
         self.remove_agent(agent)
