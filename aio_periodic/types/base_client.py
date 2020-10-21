@@ -49,9 +49,9 @@ class BaseClient(object):
         self.loop.create_task(self.loop_agent())
         self.loop.create_task(self.check_alive())
 
-    async def connect(self, connector=None, *args):
+    async def connect(self, connector=None, *args, loop=None):
         if not self._initialized:
-            self.initialize()
+            self.initialize(loop)
 
         if connector:
             self._connector = connector
