@@ -5,6 +5,7 @@ import uuid
 from .command import PING, PONG, NO_JOB, JOB_ASSIGN
 from . import command as cmd
 from binascii import crc32
+from .job import Job
 
 import logging
 
@@ -235,8 +236,10 @@ class BaseClient(object):
         if self._writer:
             self._writer.close()
 
-    async def submit_job(self, job):
+    async def submit_job(self, *args, job=None, **kwargs):
         agent = self.agent
+        if job is None:
+            job = Job(*args, **kwargs)
         await agent.send(cmd.SubmitJob(job))
         payload = await agent.receive()
         self.remove_agent(agent)
@@ -245,8 +248,10 @@ class BaseClient(object):
         else:
             return False
 
-    async def run_job(self, job):
+    async def run_job(self, *args, job=None, **kwargs):
         agent = self.agent
+        if job is None:
+            job = Job(*args, **kwargs)
         await agent.send(cmd.RunJob(job))
         payload = await agent.receive()
         self.remove_agent(agent)
