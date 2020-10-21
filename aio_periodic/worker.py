@@ -38,7 +38,8 @@ class Worker(BaseClient):
         self.remove_agent(agent)
 
     async def add_func(self, func, task=None):
-        await self._add_func(func)
+        if self.connected:
+            await self._add_func(func)
         if task:
             self._tasks[func] = task
 
