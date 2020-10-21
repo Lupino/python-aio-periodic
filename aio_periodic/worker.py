@@ -15,7 +15,7 @@ class Worker(BaseClient):
         self._tasks = {}
         self._locker = asyncio.Lock()
         self._waiters = {}
-        self.enabled_tasks=enabled_tasks
+        self.enabled_tasks = enabled_tasks
 
     def set_enable_tasks(self, enabled_tasks):
         self.enabled_tasks = enabled_tasks

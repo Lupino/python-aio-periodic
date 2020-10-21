@@ -24,24 +24,35 @@ class BaseClient(object):
         self._buffer = b''
         self._clientType = clientType
         self.agents = dict()
-        if not loop:
-            loop = asyncio.get_event_loop()
+
         self.loop = loop
 
         self._on_connected = on_connected
-
-        self.loop_agent_waiter = self.loop.create_future()
-
-        self.loop.create_task(self.loop_agent())
-        self.loop.create_task(self.check_alive())
 
         self.disconnecting_waiters = []
 
         self._connector = None
         self._connector_args = None
         self._cb = message_callback
+        self._initialized = False
+
+    def initialize(self, loop=None):
+        self._initialized = True
+
+        if loop is not None:
+            self.loop = loop
+        if self.loop is None:
+            self.loop = asyncio.get_event_loop()
+
+        self.loop_agent_waiter = self.loop.create_future()
+
+        self.loop.create_task(self.loop_agent())
+        self.loop.create_task(self.check_alive())
 
     async def connect(self, connector=None, *args):
+        if not self._initialized:
+            self.initialize()
+
         if connector:
             self._connector = connector
             self._connector_args = args
