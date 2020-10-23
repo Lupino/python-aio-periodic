@@ -311,12 +311,14 @@ class BaseClient(object):
         else:
             return False
 
+
 class BaseCluster(object):
     def __init__(self, clientclass, entrypoints, *args, loop=None, **kwargs):
         self.clients = []
 
         for _ in entrypoints:
-            self.clients = self.clients.append(clientclass(*args, loop=loop, **kwargs))
+            self.clients = self.clients.append(
+                clientclass(*args, loop=loop, **kwargs))
 
         if HashRing is None:
             raise Exception('Please install uhashring library.')
@@ -329,7 +331,13 @@ class BaseCluster(object):
         pos = self.hr.get_node_pos(name)
         return self.clients[pos]
 
-    async def run(self, method_name, func, *args, reduce=None, initialize=None, **kwargs):
+    async def run(self,
+                  method_name,
+                  func,
+                  *args,
+                  reduce=None,
+                  initialize=None,
+                  **kwargs):
         retval = initialize
         for client in self.clients:
             method = getattr(client, method_name)
@@ -339,7 +347,13 @@ class BaseCluster(object):
 
         return retval
 
-    def run_sync(self, method_name, func, *args, reduce=None, initialize=None, **kwargs):
+    def run_sync(self,
+                 method_name,
+                 func,
+                 *args,
+                 reduce=None,
+                 initialize=None,
+                 **kwargs):
         retval = initialize
         for client in self.clients:
             method = getattr(client, method_name)
