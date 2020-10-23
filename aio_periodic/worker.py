@@ -3,6 +3,7 @@ from .types.utils import TYPE_WORKER
 from .types.base_client import BaseClient, BaseCluster
 from .types import command as cmd
 import asyncio
+import math
 
 import logging
 logger = logging.getLogger('aio_periodic.worker')
@@ -138,7 +139,8 @@ class WorkerCluster(BaseCluster):
         await self.run('remove_func', func)
 
     def work(self, size):
-        self.run_sync('work', size)
+        real_size = max(1, math.floor(size / len(self.clients)))
+        self.run_sync('work', real_size)
 
     # decorator
     def func(self, func_name):
