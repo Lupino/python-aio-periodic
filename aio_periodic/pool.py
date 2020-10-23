@@ -14,30 +14,30 @@ class Pool(object):
         self._deadline = 0
         self.client = None
 
-    def _get(self):
+    async def _get(self):
         if self._deadline > 0 and self.client and self._deadline < time():
             self.client.close()
             self.client = None
         if self.client:
             try:
-                yield from self.client.ping()
+                await self.client.ping()
             except:
                 self.client.close()
                 self.client = None
 
         if self.client:
             return self.client
-        client = yield from self.init()
+        client = await self.init()
         if self._timeout > 0:
             self._deadline = time() + self._timeout
 
         self.client = client
         return client
 
-    def get(self):
-        with (yield from self.locker):
-            client = yield from self._get()
-            yield from self._sem.acquire()
+    async def get(self):
+        async with self.locker:
+            client = await self._get()
+            await self._sem.acquire()
             return client
 
     def release(self):
