@@ -57,7 +57,7 @@ class Worker(BaseClient):
         self.remove_agent(agent)
         self._tasks.pop(func, None)
 
-    async def work(self, size):
+    def work(self, size):
         for _ in range(size):
             self.loop.create_task(self._work())
 
