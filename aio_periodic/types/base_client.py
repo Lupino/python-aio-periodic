@@ -315,25 +315,28 @@ class BaseClient(object):
 class BaseCluster(object):
     def __init__(self, clientclass, entrypoints, *args, loop=None, **kwargs):
         self.clients = []
+        nodes = {}
 
-        for _ in entrypoints:
-            self.clients = self.clients.append(
-                clientclass(*args, loop=loop, **kwargs))
+        for entrypoint in entrypoints:
+            client = clientclass(*args, loop=loop, **kwargs)
+            self.clients.append(client)
+            nodes[entrypoint] = {
+                'hostname': entrypoint,
+                'instance': client
+            }
 
         if HashRing is None:
             raise Exception('Please install uhashring library.')
 
         self.entrypoints = entrypoints
-        self.hr = HashRing(nodes=entrypoints, hash_fn='ketama')
+        self.hr = HashRing(nodes=nodes, hash_fn='ketama')
 
     def get(self, name):
         '''get one client by hashring'''
-        pos = self.hr.get_node_pos(name)
-        return self.clients[pos]
+        return self.hr[name]
 
     async def run(self,
                   method_name,
-                  func,
                   *args,
                   reduce=None,
                   initialize=None,
@@ -349,7 +352,6 @@ class BaseCluster(object):
 
     def run_sync(self,
                  method_name,
-                 func,
                  *args,
                  reduce=None,
                  initialize=None,
@@ -397,7 +399,7 @@ class BaseCluster(object):
 
     async def status(self):
         '''status from servers and merge the result'''
-        async def reduce(stats, stat):
+        def reduce(stats, stat):
             for func in stat.keys():
                 if not stats.get(func):
                     stats[func] = stat[func]
@@ -408,5 +410,7 @@ class BaseCluster(object):
 
                     if stats[func]['sched_at'] > stat[func]['sched_at']:
                         stats[func]['sched_at'] = stat[func]['sched_at']
+
+            return stats
 
         return await self.run('status', reduce=reduce, initialize={})

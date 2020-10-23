@@ -114,8 +114,8 @@ class Worker(BaseClient):
 
 
 class WorkerCluster(BaseCluster):
-    def __init__(self, entrypoints, loop=None):
-        BaseCluster.__init__(self, Worker, entrypoints, loop)
+    def __init__(self, *args, **kwargs):
+        BaseCluster.__init__(self, Worker, *args, **kwargs)
 
     def set_enable_tasks(self, enabled_tasks):
         self.run_sync('set_enable_tasks', enabled_tasks)
@@ -130,7 +130,7 @@ class WorkerCluster(BaseCluster):
                              initialize=True)
 
     async def add_func(self, func, task=None):
-        self.run('add_func', func, task)
+        await self.run('add_func', func, task)
 
     async def broadcast(self, func, task):
         await self.run('broadcast', func, task)
@@ -139,13 +139,13 @@ class WorkerCluster(BaseCluster):
         await self.run('remove_func', func)
 
     def work(self, size):
-        real_size = max(1, math.floor(size / len(self.clients)))
-        self.run_sync('work', real_size)
+        self.run_sync('work', size)
 
     # decorator
     def func(self, func_name):
         def _func(task):
-            self.run_sync('func', func_name)(task)
+            for client in self.clients:
+                client.func(func_name)(task)
             return task
 
         return _func

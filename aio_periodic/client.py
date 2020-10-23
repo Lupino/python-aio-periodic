@@ -8,5 +8,5 @@ class Client(BaseClient):
 
 
 class ClientCluster(BaseCluster):
-    def __init__(self, entrypoints, loop=None):
-        BaseCluster.__init__(self, Client, entrypoints, loop)
+    def __init__(self, *args, **kwargs):
+        BaseCluster.__init__(self, Client, *args, **kwargs)
