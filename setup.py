@@ -3,10 +3,7 @@ try:
 except ImportError:
     from distutils.core import setup
 
-packages = [
-    'aio_periodic',
-    'aio_periodic.types'
-]
+packages = ['aio_periodic', 'aio_periodic.types']
 
 requires = []
 
