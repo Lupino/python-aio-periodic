@@ -5,8 +5,6 @@ from time import time
 class Pool(object):
     def __init__(self, init, size, timeout=0):
         self.init = init
-        self._entryPoint = None
-        self._size = size
         self._sem = asyncio.Semaphore(size)
         self.locker = asyncio.Lock()
 
