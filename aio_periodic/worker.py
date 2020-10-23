@@ -144,8 +144,10 @@ class WorkerCluster(BaseCluster):
     # decorator
     def func(self, func_name):
         def _func(task):
-            for client in self.clients:
-                client.func(func_name)(task)
+            def reduce(_, call):
+                call(task)
+            self.run_sync('func', func_name, reduce=reduce)
+
             return task
 
         return _func
