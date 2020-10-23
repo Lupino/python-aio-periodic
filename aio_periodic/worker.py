@@ -1,6 +1,6 @@
 from .job import Job
 from .types.utils import TYPE_WORKER
-from .types.base_client import BaseClient
+from .types.base_client import BaseClient, BaseCluster
 from .types import command as cmd
 import asyncio
 
@@ -107,6 +107,43 @@ class Worker(BaseClient):
     def func(self, func_name):
         def _func(task):
             self._tasks[func_name] = task
+            return task
+
+        return _func
+
+
+class WorkerCluster(BaseCluster):
+    def __init__(self, entrypoints, loop=None):
+        BaseCluster.__init__(self, Worker, entrypoints, loop)
+
+    def set_enable_tasks(self, enabled_tasks):
+        self.run_sync('set_enable_tasks', enabled_tasks)
+
+    def is_enabled(self, func):
+        def reduce(acc, a):
+            return acc and a
+
+        return self.run_sync('is_enabled',
+                             func,
+                             reduce=reduce,
+                             initialize=True)
+
+    async def add_func(self, func, task=None):
+        self.run('add_func', func, task)
+
+    async def broadcast(self, func, task):
+        await self.run('broadcast', func, task)
+
+    async def remove_func(self, func):
+        await self.run('remove_func', func)
+
+    def work(self, size):
+        self.run_sync('work', size)
+
+    # decorator
+    def func(self, func_name):
+        def _func(task):
+            self.run_sync('func', func_name)(task)
             return task
 
         return _func

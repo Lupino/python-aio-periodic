@@ -7,6 +7,11 @@ from . import command as cmd
 from binascii import crc32
 from .job import Job
 
+try:
+    from uhashring import HashRing
+except Exception:
+    HashRing = None
+
 import logging
 
 logger = logging.getLogger('aio_periodic.types.base_client')
@@ -305,3 +310,89 @@ class BaseClient(object):
             return True
         else:
             return False
+
+class BaseCluster(object):
+    def __init__(self, clientclass, entrypoints, *args, loop=None, **kwargs):
+        self.clients = []
+
+        for _ in entrypoints:
+            self.clients = self.clients.append(clientclass(*args, loop=loop, **kwargs))
+
+        if HashRing is None:
+            raise Exception('Please install uhashring library.')
+
+        self.entrypoints = entrypoints
+        self.hr = HashRing(nodes=entrypoints, hash_fn='ketama')
+
+    def get(self, name):
+        '''get one client by hashring'''
+        pos = self.hr.get_node_pos(name)
+        return self.clients[pos]
+
+    async def run(self, method_name, func, *args, reduce=None, initialize=None, **kwargs):
+        retval = initialize
+        for client in self.clients:
+            method = getattr(client, method_name)
+            ret = await method(*args, **kwargs)
+            if reduce:
+                retval = reduce(retval, ret)
+
+        return retval
+
+    def run_sync(self, method_name, func, *args, reduce=None, initialize=None, **kwargs):
+        retval = initialize
+        for client in self.clients:
+            method = getattr(client, method_name)
+            ret = method(*args, **kwargs)
+            if reduce:
+                retval = reduce(retval, ret)
+
+        return retval
+
+    async def connect(self, connector=None, *args, loop=None):
+        '''connect to servers'''
+        for entrypoint, client in zip(self.entrypoints, self.clients):
+            await client.connect(connector, entrypoint, *args, loop=loop)
+
+    def close(self):
+        '''close all the servers'''
+        self.run_sync('close')
+
+    async def submit_job(self, *args, job=None, **kwargs):
+        '''submit job to one server'''
+        if job is None:
+            job = Job(*args, **kwargs)
+        client = self.get(job.name)
+        return await client.submit_job(job=job)
+
+    async def run_job(self, *args, job=None, **kwargs):
+        '''run job to one server'''
+        if job is None:
+            job = Job(*args, **kwargs)
+        client = self.get(job.name)
+        return await client.run_job(job=job)
+
+    async def remove_job(self, func, name):
+        '''remove job from servers'''
+        client = self.get(name)
+        return await client.remove_job(func, name)
+
+    async def drop_func(self, func):
+        '''drop func from servers'''
+        await self.run('drop_func', func)
+
+    async def status(self):
+        '''status from servers and merge the result'''
+        async def reduce(stats, stat):
+            for func in stat.keys():
+                if not stats.get(func):
+                    stats[func] = stat[func]
+                else:
+                    stats[func]['worker_count'] += stat[func]['worker_count']
+                    stats[func]['job_count'] += stat[func]['job_count']
+                    stats[func]['processing'] += stat[func]['processing']
+
+                    if stats[func]['sched_at'] > stat[func]['sched_at']:
+                        stats[func]['sched_at'] = stat[func]['sched_at']
+
+        return await self.run('status', reduce=reduce, initialize={})
