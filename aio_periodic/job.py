@@ -43,7 +43,7 @@ class Job(object):
 
     @property
     def func_name(self):
-        return self.w._strip_prefix(str(self.payload.func, 'utf-8'))
+        return self.w._strip_prefix_subfix(str(self.payload.func, 'utf-8'))
 
     @property
     def name(self):
