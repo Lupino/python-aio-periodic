@@ -19,7 +19,7 @@ class Pool(object):
         if self.client:
             try:
                 await self.client.ping()
-            except:
+            except Exception:
                 self.client.close()
                 self.client = None
 
