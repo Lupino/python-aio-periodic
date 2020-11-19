@@ -41,6 +41,7 @@ class BaseClient(object):
         self._connector_args = None
         self._cb = message_callback
         self._initialized = False
+        self._send_locker = asyncio.Lock()
 
     def initialize(self, loop=None):
         self._initialized = True

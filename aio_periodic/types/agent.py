@@ -15,7 +15,8 @@ class Agent(object):
         self._buffer.insert(0, data)
         if len(self._waiters) > 0:
             waiter = self._waiters.pop()
-            waiter.set_result(True)
+            if not waiter.cancelled():
+                waiter.set_result(True)
 
     async def receive(self):
         if len(self._buffer) == 0:
@@ -27,18 +28,19 @@ class Agent(object):
         return len(self._buffer)
 
     async def send(self, cmd):
-        payload = bytes(cmd)
-        if self.msgid:
-            payload = self.msgid + payload
-        size = encode_int32(len(payload))
-        crc = encode_int32(crc32(to_bytes(payload)))
-        writer = self.client.get_writer()
-        try:
-            writer.write(MAGIC_REQUEST + size + crc + to_bytes(payload))
-            await writer.drain()
-        except Exception as e:
-            self.client.connected = False
-            raise e
+        async with self.client._send_locker:
+            payload = bytes(cmd)
+            if self.msgid:
+                payload = self.msgid + payload
+            size = encode_int32(len(payload))
+            crc = encode_int32(crc32(to_bytes(payload)))
+            writer = self.client.get_writer()
+            try:
+                writer.write(MAGIC_REQUEST + size + crc + to_bytes(payload))
+                await writer.drain()
+            except Exception as e:
+                self.client.connected = False
+                raise e
 
     def _make_waiter(self):
         waiter = self._loop.create_future()
