@@ -297,7 +297,8 @@ class BaseClient(object):
                 'worker_count': int(stat[1]),
                 'job_count': int(stat[2]),
                 'processing': int(stat[3]),
-                'sched_at': int(stat[4])
+                'locked': int(stat[4]),
+                'sched_at': int(stat[5])
             }
 
         return retval
