@@ -1,6 +1,7 @@
 import asyncio
 from .utils import MAGIC_REQUEST, encode_int32, to_bytes
 from binascii import crc32
+from time import time
 
 
 class Agent(object):
@@ -29,6 +30,7 @@ class Agent(object):
 
     async def send(self, cmd):
         async with self.client._send_locker:
+            self.client._send_timer = time()
             payload = bytes(cmd)
             if self.msgid:
                 payload = self.msgid + payload

@@ -6,6 +6,7 @@ from .command import PING, PONG, NO_JOB, JOB_ASSIGN
 from . import command as cmd
 from binascii import crc32
 from .job import Job
+from time import time
 
 try:
     from uhashring import HashRing
@@ -42,6 +43,8 @@ class BaseClient(object):
         self._cb = message_callback
         self._initialized = False
         self._send_locker = asyncio.Lock()
+        self._receive_timer = 0
+        self._send_timer = 0
 
     def initialize(self, loop=None):
         self._initialized = True
@@ -55,6 +58,7 @@ class BaseClient(object):
 
         self.loop.create_task(self.loop_agent())
         self.loop.create_task(self.check_alive())
+        self.loop.create_task(self.monitor())
 
     async def connect(self, connector=None, *args, loop=None):
         if not self._initialized:
@@ -111,6 +115,19 @@ class BaseClient(object):
                     self.connected = False
             await asyncio.sleep(1)
 
+    async def monitor(self):
+        while True:
+            now = time()
+            if self._send_timer + 300 < now:
+                self.connected = False
+
+            if self._receive_timer > self._send_timer:
+                delay = self._receive_timer - self._send_timer
+                if delay > 600:
+                    self.connected = False
+
+            await asyncio.sleep(1)
+
     @property
     def agent(self):
         msgid = bytes(uuid.uuid4().hex[:4], 'utf-8')
@@ -144,6 +161,7 @@ class BaseClient(object):
         async def main_receive_loop():
             while self.connected:
                 payload = await receive()
+                self._receive_timer = time()
                 msgid = payload[0:4]
                 agent = self.agents.get(msgid)
                 payload = payload[4:]

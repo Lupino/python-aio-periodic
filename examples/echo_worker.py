@@ -24,7 +24,7 @@ async def test_lock(job):
 
 
 async def main(loop):
-    worker = Worker(loop)
+    worker = Worker([], loop)
     await worker.connect(open_connection, 'unix:///tmp/periodic.sock')
 
     await worker.add_func('echo', echo)
