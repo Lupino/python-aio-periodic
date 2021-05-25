@@ -119,7 +119,10 @@ class Worker(BaseClient):
             job = Job(payload[1:], self)
             await self.process_job(job)
         finally:
-            waiter.set_result(True)
+            async with self._locker:
+                waiter = self._waiters.get(msgid)
+                if waiter:
+                    waiter.set_result(True)
 
     async def process_job(self, job):
         task = self._tasks.get(job.func_name)
