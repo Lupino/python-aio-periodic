@@ -54,6 +54,12 @@ class Worker(BaseClient):
         for func in self._tasks.keys():
             await self._add_func(func)
 
+        async with self._locker:
+            for waiter in self._waiters.values():
+                await waiter.set_result(True)
+
+            self._waiters = {}
+
     async def _add_func(self, func):
         if not self.is_enabled(func):
             return
