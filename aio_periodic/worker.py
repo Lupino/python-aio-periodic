@@ -99,6 +99,9 @@ class Worker(BaseClient):
 
             try:
                 await agent.send(cmd.GrabJob())
+                waiter = self.loop.create_future()
+                async with self._locker:
+                    self._waiters[agent.msgid] = waiter
             except Exception as e:
                 logger.exception(e)
 
@@ -106,10 +109,6 @@ class Worker(BaseClient):
         self.loop.create_task(self.run_task(payload, msgid))
 
     async def run_task(self, payload, msgid):
-        waiter = self.loop.create_future()
-        async with self._locker:
-            self._waiters[msgid] = waiter
-
         try:
             job = Job(payload[1:], self)
             await self.process_job(job)
