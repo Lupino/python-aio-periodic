@@ -56,7 +56,8 @@ class Worker(BaseClient):
 
         async with self._locker:
             for waiter in self._waiters.values():
-                await waiter.set_result(True)
+                if not waiter.cancelled():
+                    waiter.set_result(True)
 
             self._waiters = {}
 
@@ -121,7 +122,7 @@ class Worker(BaseClient):
         finally:
             async with self._locker:
                 waiter = self._waiters.get(msgid)
-                if waiter:
+                if waiter and not waiter.cancelled():
                     waiter.set_result(True)
 
     async def process_job(self, job):
