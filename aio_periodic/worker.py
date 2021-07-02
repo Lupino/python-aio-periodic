@@ -5,7 +5,7 @@ from .types import command as cmd
 import asyncio
 
 import logging
-logger = logging.getLogger('aio_periodic.worker')
+logger = logging.getLogger(__name__)
 
 
 class Worker(BaseClient):
@@ -54,9 +54,11 @@ class Worker(BaseClient):
         for func in self._tasks.keys():
             await self._add_func(func)
 
+        await asyncio.sleep(1)
+
         async with self._locker:
             for waiter in self._waiters.values():
-                if not waiter.cancelled():
+                if not waiter.done():
                     waiter.set_result(True)
 
             self._waiters = {}
@@ -89,41 +91,69 @@ class Worker(BaseClient):
         self.remove_agent(agent)
         self._tasks.pop(func, None)
 
-    def work(self, size):
+    async def work(self, size):
+        tasks = []
         for _ in range(size):
-            self.loop.create_task(self._work())
+            tasks.append(asyncio.create_task(self._work()))
+
+        while True:
+            alived = []
+            for task in tasks:
+                if task.done():
+                    logger.error('Task ' + task.get_name() + ' is done.')
+                    alived.append(asyncio.create_task(self._work()))
+                    exc = task.exception()
+                    if exc:
+                        logger.exception(exc)
+                else:
+                    alived.append(task)
+
+            tasks = alived[:]
+            alived = []
+            await asyncio.sleep(1)
+
 
     async def _work(self):
         agent = self.agent
+        timer = None
         while True:
-            await asyncio.sleep(1)
-
             async with self._locker:
                 waiter = self._waiters.pop(agent.msgid, None)
 
-            if waiter:
-                await waiter
+            if waiter and not waiter.done():
+                try:
+                    await waiter
+                except Exception as e:
+                    logger.exception(e)
 
             try:
                 await agent.send(cmd.GrabJob())
-                waiter = self.loop.create_future()
-                async with self._locker:
-                    self._waiters[agent.msgid] = waiter
             except Exception as e:
                 logger.exception(e)
+
+            if not waiter:
+                await asyncio.sleep(20)
+
+
+    async def _waiter_done(self, msgid):
+        async with self._locker:
+            waiter = self._waiters.pop(msgid, None)
+            if waiter and not waiter.done():
+                waiter.set_result(True)
+
 
     async def _message_callback(self, payload, msgid):
         self.loop.create_task(self.run_task(payload, msgid))
 
     async def run_task(self, payload, msgid):
         try:
+            waiter = self.loop.create_future()
+            async with self._locker:
+                self._waiters[msgid] = waiter
             job = Job(payload[1:], self)
             await self.process_job(job)
         finally:
-            async with self._locker:
-                waiter = self._waiters.get(msgid)
-                if waiter and not waiter.cancelled():
-                    waiter.set_result(True)
+            await self._waiter_done(msgid)
 
     async def process_job(self, job):
         task = self._tasks.get(job.func_name)
@@ -171,8 +201,8 @@ class WorkerCluster(BaseCluster):
     async def remove_func(self, func):
         await self.run('remove_func', func)
 
-    def work(self, size):
-        self.run_sync('work', size)
+    async def work(self, size):
+        await self.run('work', size)
 
     # decorator
     def func(self, func_name):
