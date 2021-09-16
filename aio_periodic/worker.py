@@ -1,8 +1,11 @@
 from .job import Job
 from .types.utils import TYPE_WORKER
 from .types.base_client import BaseClient, BaseCluster
+from .types.agent import Agent
 from .types import command as cmd
 import asyncio
+from asyncio_pool import AioPool
+import random
 
 import logging
 logger = logging.getLogger(__name__)
@@ -13,9 +16,8 @@ class Worker(BaseClient):
         BaseClient.__init__(self, TYPE_WORKER, loop, self._message_callback,
                             self._on_connected)
         self._tasks = {}
-        self._locker = asyncio.Lock()
-        self._waiters = {}
         self.enabled_tasks = enabled_tasks
+        self._pool = None
 
         self.prefix = None
         self.subfix = None
@@ -56,12 +58,6 @@ class Worker(BaseClient):
 
         await asyncio.sleep(1)
 
-        async with self._locker:
-            for waiter in self._waiters.values():
-                if not waiter.done():
-                    waiter.set_result(True)
-
-            self._waiters = {}
 
     async def _add_func(self, func):
         if not self.is_enabled(func):
@@ -92,68 +88,49 @@ class Worker(BaseClient):
         self._tasks.pop(func, None)
 
     async def work(self, size):
-        tasks = []
-        for _ in range(size):
-            tasks.append(asyncio.create_task(self._work()))
+        self._pool = AioPool(size=size)
+        agents = [self.agent for _ in range(size)]
 
-        while True:
-            alived = []
-            for task in tasks:
-                if task.done():
-                    logger.error('Task ' + task.get_name() + ' is done.')
-                    alived.append(asyncio.create_task(self._work()))
-                    exc = task.exception()
-                    if exc:
-                        logger.exception(exc)
-                else:
-                    alived.append(task)
-
-            tasks = alived[:]
-            alived = []
-            await asyncio.sleep(1)
-
-
-    async def _work(self):
-        agent = self.agent
-        timer = None
-        while True:
-            async with self._locker:
-                waiter = self._waiters.pop(agent.msgid, None)
-
-            if waiter and not waiter.done():
-                try:
-                    await waiter
-                except Exception as e:
-                    logger.exception(e)
+        async def safe_send(agent):
+            if not self.connected:
+                waiter = await self.make_waiter()
+                await waiter
 
             try:
                 await agent.send(cmd.GrabJob())
             except Exception as e:
                 logger.exception(e)
 
-            if not waiter:
-                await asyncio.sleep(20)
+        for agent in agents:
+            await safe_send(agent)
 
+        while True:
+            if self._pool.is_empty:
+                agent = random.choice(agents)
+                await safe_send(agent)
+                await asyncio.sleep(120)
+                continue
 
-    async def _waiter_done(self, msgid):
-        async with self._locker:
-            waiter = self._waiters.pop(msgid, None)
-            if waiter and not waiter.done():
-                waiter.set_result(True)
+            if self._pool.is_full:
+                await asyncio.sleep(1)
+                continue
 
+            choices = random.choices(agents, k = size - len(self._pool))
+            for agent in choices:
+                await safe_send(agent)
+
+            await asyncio.sleep(60)
 
     async def _message_callback(self, payload, msgid):
-        self.loop.create_task(self.run_task(payload, msgid))
+        await self._pool.spawn(self.run_task(payload, msgid))
 
     async def run_task(self, payload, msgid):
         try:
-            waiter = self.loop.create_future()
-            async with self._locker:
-                self._waiters[msgid] = waiter
             job = Job(payload[1:], self)
             await self.process_job(job)
         finally:
-            await self._waiter_done(msgid)
+            agent = Agent(self, msgid, self.loop)
+            await agent.send(cmd.GrabJob())
 
     async def process_job(self, job):
         task = self._tasks.get(job.func_name)

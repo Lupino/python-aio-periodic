@@ -31,6 +31,8 @@ class BaseClient(object):
         self._buffer = b''
         self._clientType = clientType
         self.agents = dict()
+        self._waiters = []
+        self._waiter_lock = asyncio.Lock()
 
         self.loop = loop
 
@@ -84,11 +86,11 @@ class BaseClient(object):
         if self._on_connected:
             await self._on_connected()
 
-        if self.loop_agent_waiter:
-            try:
-                self.loop_agent_waiter.set_result(True)
-            except Exception as e:
-                logger.exception(e)
+        async with self._waiter_lock:
+            for waiter in self._waiters:
+                if not waiter.cancelled():
+                    waiter.set_result(True)
+            self._waiters = []
 
         return True
 
@@ -142,6 +144,7 @@ class BaseClient(object):
         return self._writer
 
     async def loop_agent(self):
+        connected_waiter = await self.make_waiter()
         async def receive():
             magic = await self._receive(4)
             if not magic:
@@ -179,9 +182,9 @@ class BaseClient(object):
                     logger.error('Agent %s not found.' % msgid)
 
         while True:
-            if self.loop_agent_waiter:
-                await self.loop_agent_waiter
-                self.loop_agent_waiter = None
+            if connected_waiter:
+                await connected_waiter
+                connected_waiter = None
 
             try:
                 if self.connected:
@@ -191,7 +194,7 @@ class BaseClient(object):
                 logger.exception(e)
                 self.connected = False
 
-            self.loop_agent_waiter = self.loop.create_future()
+            connected_waiter = await self.make_waiter()
             delay = 0
             while True:
                 try:
@@ -330,6 +333,13 @@ class BaseClient(object):
             return True
         else:
             return False
+
+    async def make_waiter(self):
+        waiter = self.loop.create_future()
+        async with self._waiter_lock:
+            self._waiters.append(waiter)
+
+        return waiter
 
 
 class BaseCluster(object):

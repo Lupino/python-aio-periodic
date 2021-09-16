@@ -33,7 +33,7 @@ async def main(loop):
     worker.work(10)
 
 
-loop = asyncio.get_event_loop()
+loop = asyncio.get_event_loop_policy().get_event_loop()
 
 loop.create_task(main(loop))
 
