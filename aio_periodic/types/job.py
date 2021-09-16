@@ -1,5 +1,5 @@
 from .utils import encode_str8, encode_str32, encode_int32, encode_int64, \
-        decode_int8, decode_int16, decode_int32, decode_int64, encode_int8
+        decode_int8, decode_int32, decode_int64, encode_int8
 
 
 class Job(object):

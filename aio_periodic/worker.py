@@ -1,14 +1,33 @@
 from .job import Job
 from .types.utils import TYPE_WORKER
 from .types.base_client import BaseClient, BaseCluster
-from .types.agent import Agent
 from .types import command as cmd
 import asyncio
 from asyncio_pool import AioPool
-import random
+from time import time
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+class GrabAgent(object):
+    def __init__(self, agent):
+        self.agent = agent
+        self.sent_timer = 0
+
+    async def safe_send(self):
+        if not self.agent.client.connected:
+            waiter = await self.agent.client.make_waiter()
+            await waiter
+
+        try:
+            await self.agent.send(cmd.GrabJob())
+            self.sent_timer = time()
+        except Exception as e:
+            logger.exception(e)
+
+    def is_timeout(self):
+        return self.sent_timer + 300 * 60 < time()
 
 
 class Worker(BaseClient):
@@ -21,6 +40,8 @@ class Worker(BaseClient):
 
         self.prefix = None
         self.subfix = None
+
+        self.grab_agents = {}
 
     def set_prefix(self, prefix):
         self.prefix = prefix
@@ -58,7 +79,6 @@ class Worker(BaseClient):
 
         await asyncio.sleep(1)
 
-
     async def _add_func(self, func):
         if not self.is_enabled(func):
             return
@@ -90,35 +110,13 @@ class Worker(BaseClient):
     async def work(self, size):
         self._pool = AioPool(size=size)
         agents = [self.agent for _ in range(size)]
-
-        async def safe_send(agent):
-            if not self.connected:
-                waiter = await self.make_waiter()
-                await waiter
-
-            try:
-                await agent.send(cmd.GrabJob())
-            except Exception as e:
-                logger.exception(e)
-
         for agent in agents:
-            await safe_send(agent)
+            self.grab_agents[agent.msgid] = GrabAgent(agent)
 
         while True:
-            if self._pool.is_empty:
-                agent = random.choice(agents)
-                await safe_send(agent)
-                await asyncio.sleep(120)
-                continue
-
-            if self._pool.is_full:
-                await asyncio.sleep(1)
-                continue
-
-            choices = random.choices(agents, k = size - len(self._pool))
-            for agent in choices:
-                await safe_send(agent)
-
+            for agent in self.grab_agents.values():
+                if agent.is_timeout():
+                    await agent.safe_send()
             await asyncio.sleep(60)
 
     async def _message_callback(self, payload, msgid):
@@ -129,8 +127,8 @@ class Worker(BaseClient):
             job = Job(payload[1:], self)
             await self.process_job(job)
         finally:
-            agent = Agent(self, msgid, self.loop)
-            await agent.send(cmd.GrabJob())
+            agent = self.grab_agents[msgid]
+            await agent.safe_send()
 
     async def process_job(self, job):
         task = self._tasks.get(job.func_name)

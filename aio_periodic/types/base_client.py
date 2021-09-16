@@ -145,6 +145,7 @@ class BaseClient(object):
 
     async def loop_agent(self):
         connected_waiter = await self.make_waiter()
+
         async def receive():
             magic = await self._receive(4)
             if not magic:
