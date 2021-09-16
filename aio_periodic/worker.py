@@ -107,19 +107,26 @@ class Worker(BaseClient):
         self.remove_agent(agent)
         self._tasks.pop(func, None)
 
-    async def work(self, size):
+    async def next_grab(self):
+        for agent in self.grab_agents.values():
+            if agent.is_timeout():
+                await agent.safe_send()
+                break
+
+    async def work(self, size, min_delay=60):
         self._pool = AioPool(size=size)
         agents = [self.agent for _ in range(size)]
         for agent in agents:
             self.grab_agents[agent.msgid] = GrabAgent(agent)
 
+        delay = max(min_delay, int(300 / size))
+
         while True:
-            for agent in self.grab_agents.values():
-                if agent.is_timeout():
-                    await agent.safe_send()
-            await asyncio.sleep(60)
+            await self.next_grab()
+            await asyncio.sleep(delay)
 
     async def _message_callback(self, payload, msgid):
+        await self.next_grab()
         await self._pool.spawn(self.run_task(payload, msgid))
 
     async def run_task(self, payload, msgid):
