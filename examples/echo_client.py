@@ -39,6 +39,4 @@ async def main():
         await client.submit_job(job=job6)
 
 
-loop = asyncio.get_event_loop_policy().get_event_loop()
-
-loop.run_until_complete(main())
+asyncio.run(main())

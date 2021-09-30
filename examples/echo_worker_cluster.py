@@ -33,8 +33,4 @@ async def main():
     worker.work(10)
 
 
-loop = asyncio.get_event_loop_policy().get_event_loop()
-
-loop.create_task(main())
-
-loop.run_forever()
+asyncio.run(main())
