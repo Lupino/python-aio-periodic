@@ -21,24 +21,19 @@ logger = logging.getLogger('aio_periodic.types.base_client')
 class BaseClient(object):
     def __init__(self,
                  clientType,
-                 loop=None,
                  message_callback=None,
                  on_connected=None):
-        self.connected = False
+
+        self.connected_evt = asyncio.Event()
+
         self.connid = None
         self._reader = None
         self._writer = None
         self._buffer = b''
         self._clientType = clientType
         self.agents = dict()
-        self._waiters = []
-        self._waiter_lock = asyncio.Lock()
-
-        self.loop = loop
 
         self._on_connected = on_connected
-
-        self.disconnecting_waiters = []
 
         self._connector = None
         self._connector_args = None
@@ -48,23 +43,16 @@ class BaseClient(object):
         self._receive_timer = 0
         self._send_timer = 0
 
-    def initialize(self, loop=None):
+    def initialize(self):
         self._initialized = True
 
-        if loop is not None:
-            self.loop = loop
-        if self.loop is None:
-            self.loop = asyncio.get_event_loop()
+        asyncio.create_task(self.loop_agent())
+        asyncio.create_task(self.check_alive())
+        asyncio.create_task(self.monitor())
 
-        self.loop_agent_waiter = self.loop.create_future()
-
-        self.loop.create_task(self.loop_agent())
-        self.loop.create_task(self.check_alive())
-        self.loop.create_task(self.monitor())
-
-    async def connect(self, connector=None, *args, loop=None):
+    async def connect(self, connector=None, *args):
         if not self._initialized:
-            self.initialize(loop)
+            self.initialize()
 
         if connector:
             self._connector = connector
@@ -80,19 +68,17 @@ class BaseClient(object):
         self._writer = writer
         self._reader = reader
         self._buffer = b''
-        agent = Agent(self, None, self.loop)
-        await agent.send(self._clientType)
-        self.connected = True
+        agent = Agent(self, None)
+        await agent.send(self._clientType, True)
+        self.connected_evt.set()
         if self._on_connected:
             await self._on_connected()
 
-        async with self._waiter_lock:
-            for waiter in self._waiters:
-                if not waiter.cancelled():
-                    waiter.set_result(True)
-            self._waiters = []
-
         return True
+
+    @property
+    def connected(self):
+        return self.connected_evt.is_set()
 
     async def _receive(self, size):
         while True:
@@ -109,24 +95,24 @@ class BaseClient(object):
 
     async def check_alive(self):
         while True:
-            if self.connected:
-                try:
-                    await self.ping()
-                except Exception as e:
-                    logger.exception(e)
-                    self.connected = False
+            await self.connected_evt.wait()
+            try:
+                await self.ping()
+            except Exception as e:
+                logger.exception(e)
+                self.connected_evt.clear()
             await asyncio.sleep(1)
 
     async def monitor(self):
         while True:
             now = time()
             if self._send_timer + 300 < now:
-                self.connected = False
+                self.connected_evt.clear()
 
             if self._receive_timer > self._send_timer:
                 delay = self._receive_timer - self._send_timer
                 if delay > 600:
-                    self.connected = False
+                    self.connected_evt.clear()
 
             await asyncio.sleep(1)
 
@@ -136,7 +122,7 @@ class BaseClient(object):
         while self.agents.get(msgid):
             msgid = bytes(uuid.uuid4().hex[:4], 'utf-8')
 
-        agent = Agent(self, msgid, self.loop)
+        agent = Agent(self, msgid)
         self.agents[msgid] = agent
         return agent
 
@@ -144,8 +130,6 @@ class BaseClient(object):
         return self._writer
 
     async def loop_agent(self):
-        connected_waiter = await self.make_waiter()
-
         async def receive():
             magic = await self._receive(4)
             if not magic:
@@ -183,19 +167,16 @@ class BaseClient(object):
                     logger.error('Agent %s not found.' % msgid)
 
         while True:
-            if connected_waiter:
-                await connected_waiter
-                connected_waiter = None
+            await self.connected_evt.wait()
 
             try:
-                if self.connected:
-                    self.connid = await receive()
-                    await main_receive_loop()
+                self.connid = await receive()
+                await main_receive_loop()
             except Exception as e:
                 logger.exception(e)
-                self.connected = False
 
-            connected_waiter = await self.make_waiter()
+            self.connected_evt.clear()
+
             delay = 0
             while True:
                 try:
@@ -211,51 +192,27 @@ class BaseClient(object):
 
                 await asyncio.sleep(delay)
 
-            waiters = self.disconnecting_waiters[:]
-            self.disconnecting_waiters = []
-            for waiter in waiters:
-                waiter.set_result(True)
-
     async def ping(self, timeout=10):
         agent = self.agent
         await agent.send(PING)
-        ret = self.loop.create_future()
+        evt = asyncio.Event()
 
         async def receive():
             payload = await agent.receive()
             self.agents.pop(agent.msgid)
             if payload == PONG:
-                try:
-                    ret.set_result(True)
-                except Exception:
-                    pass
-            else:
-                try:
-                    ret.set_result(False)
-                except Exception:
-                    pass
+                evt.set()
 
-        async def timecheck():
-            await asyncio.sleep(timeout)
-            try:
-                ret.set_result(False)
-            except Exception:
-                pass
+        task1 = asyncio.create_task(receive())
 
-        task1 = self.loop.create_task(receive())
-        task2 = self.loop.create_task(timecheck())
-
-        r = await ret
+        try:
+            await asyncio.wait_for(evt.wait(), timeout)
+        except  asyncio.TimeoutError:
+            pass
 
         task1.cancel()
-        task2.cancel()
 
-        return r
-
-    def add_lose_waiter(self):
-        waiter = self.loop.create_future()
-        self.disconnecting_waiters.append(waiter)
-        return waiter
+        return evt.is_set()
 
     def remove_agent(self, agent):
         self.agents.pop(agent.msgid, None)
@@ -335,21 +292,17 @@ class BaseClient(object):
         else:
             return False
 
-    async def make_waiter(self):
-        waiter = self.loop.create_future()
-        async with self._waiter_lock:
-            self._waiters.append(waiter)
-
-        return waiter
+    async def connected_wait(self):
+        return await self.connected_evt.wait()
 
 
 class BaseCluster(object):
-    def __init__(self, clientclass, entrypoints, *args, loop=None, **kwargs):
+    def __init__(self, clientclass, entrypoints, *args, **kwargs):
         self.clients = []
         nodes = {}
 
         for entrypoint in entrypoints:
-            client = clientclass(*args, loop=loop, **kwargs)
+            client = clientclass(*args, **kwargs)
             self.clients.append(client)
             nodes[entrypoint] = {
                 'hostname': entrypoint,
@@ -396,10 +349,10 @@ class BaseCluster(object):
 
         return retval
 
-    async def connect(self, connector=None, *args, loop=None):
+    async def connect(self, connector=None, *args):
         '''connect to servers'''
         for entrypoint, client in zip(self.entrypoints, self.clients):
-            await client.connect(connector, entrypoint, *args, loop=loop)
+            await client.connect(connector, entrypoint, *args)
 
     def close(self):
         '''close all the servers'''

@@ -16,10 +16,6 @@ class GrabAgent(object):
         self.sent_timer = 0
 
     async def safe_send(self):
-        if not self.agent.client.connected:
-            waiter = await self.agent.client.make_waiter()
-            await waiter
-
         try:
             await self.agent.send(cmd.GrabJob())
             self.sent_timer = time()
@@ -31,8 +27,8 @@ class GrabAgent(object):
 
 
 class Worker(BaseClient):
-    def __init__(self, enabled_tasks=[], loop=None):
-        BaseClient.__init__(self, TYPE_WORKER, loop, self._message_callback,
+    def __init__(self, enabled_tasks=[]):
+        BaseClient.__init__(self, TYPE_WORKER, self._message_callback,
                             self._on_connected)
         self._tasks = {}
         self.enabled_tasks = enabled_tasks
@@ -127,7 +123,7 @@ class Worker(BaseClient):
 
     async def _message_callback(self, payload, msgid):
         await self.next_grab()
-        await self._pool.spawn(self.run_task(payload, msgid))
+        self._pool.spawn_n(self.run_task(payload, msgid))
 
     async def run_task(self, payload, msgid):
         try:

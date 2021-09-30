@@ -23,8 +23,8 @@ async def test_lock(job):
     await job.with_lock('test', 2, do_lock)
 
 
-async def main(loop):
-    worker = Worker([], loop)
+async def main():
+    worker = Worker([])
     await worker.connect(open_connection, 'unix:///tmp/periodic.sock')
 
     await worker.add_func('echo', echo)
@@ -35,6 +35,6 @@ async def main(loop):
 
 loop = asyncio.get_event_loop_policy().get_event_loop()
 
-loop.create_task(main(loop))
+loop.create_task(main())
 
 loop.run_forever()

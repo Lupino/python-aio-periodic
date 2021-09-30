@@ -1,13 +1,13 @@
 from .utils import MAGIC_REQUEST, encode_int32, to_bytes
 from binascii import crc32
 from time import time
+import asyncio
 
 
 class Agent(object):
-    def __init__(self, client, msgid, loop=None):
+    def __init__(self, client, msgid):
         self.msgid = msgid
         self._buffer = []
-        self._loop = loop
         self._waiters = []
         self.client = client
 
@@ -15,19 +15,20 @@ class Agent(object):
         self._buffer.insert(0, data)
         if len(self._waiters) > 0:
             waiter = self._waiters.pop()
-            if not waiter.cancelled():
-                waiter.set_result(True)
+            waiter.set()
 
     async def receive(self):
         if len(self._buffer) == 0:
             waiter = self._make_waiter()
-            await waiter
+            await waiter.wait()
         return self._buffer.pop()
 
     def buffer_len(self):
         return len(self._buffer)
 
-    async def send(self, cmd):
+    async def send(self, cmd, force=False):
+        if not force:
+            await self.client.connected_wait()
         async with self.client._send_locker:
             self.client._send_timer = time()
             payload = bytes(cmd)
@@ -40,10 +41,10 @@ class Agent(object):
                 writer.write(MAGIC_REQUEST + size + crc + to_bytes(payload))
                 await writer.drain()
             except Exception as e:
-                self.client.connected = False
+                self.client.connected_evt.clear()
                 raise e
 
     def _make_waiter(self):
-        waiter = self._loop.create_future()
+        waiter = asyncio.Event()
         self._waiters.insert(0, waiter)
         return waiter

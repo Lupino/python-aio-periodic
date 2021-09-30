@@ -3,8 +3,8 @@ import asyncio
 from time import time
 
 
-async def main(loop):
-    client = ClientCluster(['tcp://:5000', 'tcp://:5001'], loop=loop)
+async def main():
+    client = ClientCluster(['tcp://:5000', 'tcp://:5001'])
     await client.connect(open_connection)
 
     job = Job(func='echo', name='test_echo')
@@ -40,4 +40,4 @@ async def main(loop):
 
 loop = asyncio.get_event_loop_policy().get_event_loop()
 
-loop.run_until_complete(main(loop))
+loop.run_until_complete(main())

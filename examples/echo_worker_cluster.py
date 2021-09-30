@@ -28,13 +28,13 @@ async def test_lock(job):
     await job.with_lock('test', 2, do_lock)
 
 
-async def main(loop):
+async def main():
     await worker.connect(open_connection)
     worker.work(10)
 
 
 loop = asyncio.get_event_loop_policy().get_event_loop()
 
-loop.create_task(main(loop))
+loop.create_task(main())
 
 loop.run_forever()
