@@ -15,16 +15,13 @@ except Exception:
 
 import logging
 
-logger = logging.getLogger('aio_periodic.types.base_client')
+logger = logging.getLogger(__name__)
 
 
 class BaseClient(object):
-    def __init__(self,
-                 clientType,
-                 message_callback=None,
-                 on_connected=None):
+    def __init__(self, clientType, message_callback=None, on_connected=None):
 
-        self.connected_evt = asyncio.Event()
+        self.connected_evt = None
 
         self.connid = None
         self._reader = None
@@ -39,12 +36,14 @@ class BaseClient(object):
         self._connector_args = None
         self._cb = message_callback
         self._initialized = False
-        self._send_locker = asyncio.Lock()
+        self._send_locker = None
         self._receive_timer = 0
         self._send_timer = 0
 
     def initialize(self):
         self._initialized = True
+        self.connected_evt = asyncio.Event()
+        self._send_locker = asyncio.Lock()
 
         asyncio.create_task(self.loop_agent())
         asyncio.create_task(self.check_alive())
@@ -207,7 +206,7 @@ class BaseClient(object):
 
         try:
             await asyncio.wait_for(evt.wait(), timeout)
-        except  asyncio.TimeoutError:
+        except asyncio.TimeoutError:
             pass
 
         task1.cancel()
@@ -304,10 +303,7 @@ class BaseCluster(object):
         for entrypoint in entrypoints:
             client = clientclass(*args, **kwargs)
             self.clients.append(client)
-            nodes[entrypoint] = {
-                'hostname': entrypoint,
-                'instance': client
-            }
+            nodes[entrypoint] = {'hostname': entrypoint, 'instance': client}
 
         if HashRing is None:
             raise Exception('Please install uhashring library.')
