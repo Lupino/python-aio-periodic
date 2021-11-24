@@ -168,6 +168,14 @@ class Worker(BaseClient):
 
         return _func
 
+    def brueprint(self, app):
+        app.set_worker(self)
+        for func, task in app.tasks.items():
+            self._tasks[func] = task
+
+        for btsk in app.broadcast_tasks:
+            self._broadcast_tasks.append(btsk)
+
 
 class WorkerCluster(BaseCluster):
     def __init__(self, *args, **kwargs):
@@ -208,3 +216,6 @@ class WorkerCluster(BaseCluster):
             return task
 
         return _func
+
+    def brueprint(self, app):
+        self.run_sync('blueprint', app)
