@@ -39,15 +39,19 @@ class BaseClient(object):
         self._send_locker = None
         self._receive_timer = 0
         self._send_timer = 0
+        self._processes = []
 
     def initialize(self):
         self._initialized = True
         self.connected_evt = asyncio.Event()
         self._send_locker = asyncio.Lock()
 
-        asyncio.create_task(self.loop_agent())
-        asyncio.create_task(self.check_alive())
-        asyncio.create_task(self.monitor())
+        task = asyncio.create_task(self.loop_agent())
+        self._processes.append(task)
+        task = asyncio.create_task(self.check_alive())
+        self._processes.append(task)
+        task = asyncio.create_task(self.monitor())
+        self._processes.append(task)
 
     async def connect(self, connector=None, *args):
         if not self._initialized:
@@ -216,9 +220,13 @@ class BaseClient(object):
     def remove_agent(self, agent):
         self.agents.pop(agent.msgid, None)
 
-    def close(self):
+    def close(self, force=False):
         if self._writer:
             self._writer.close()
+
+        if force:
+            for task in self._processes:
+                task.cancel()
 
     async def submit_job(self, *args, job=None, **kwargs):
         agent = self.agent
