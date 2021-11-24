@@ -168,7 +168,7 @@ class Worker(BaseClient):
 
         return _func
 
-    def brueprint(self, app):
+    def blueprint(self, app):
         app.set_worker(self)
         for func, task in app.tasks.items():
             self._tasks[func] = task
@@ -217,5 +217,5 @@ class WorkerCluster(BaseCluster):
 
         return _func
 
-    def brueprint(self, app):
+    def blueprint(self, app):
         self.run_sync('blueprint', app)
