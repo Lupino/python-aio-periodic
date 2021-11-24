@@ -32,6 +32,7 @@ class Worker(BaseClient):
         BaseClient.__init__(self, TYPE_WORKER, self._message_callback,
                             self._on_connected)
         self._tasks = {}
+        self._broadcast_tasks = []
         self.enabled_tasks = enabled_tasks
         self._pool = None
 
@@ -72,7 +73,10 @@ class Worker(BaseClient):
 
     async def _on_connected(self):
         for func in self._tasks.keys():
-            await self._add_func(func)
+            if func in self._broadcast_tasks:
+                await self._broadcast(func)
+            else:
+                await self._add_func(func)
 
         await asyncio.sleep(1)
 
@@ -84,18 +88,26 @@ class Worker(BaseClient):
         await agent.send(cmd.CanDo(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
 
-    async def add_func(self, func, task=None):
+    async def add_func(self, func, task):
         if self.connected:
             await self._add_func(func)
-        if task:
-            self._tasks[func] = task
 
-    async def broadcast(self, func, task):
+        self._tasks[func] = task
+
+    async def _broadcast(self, func):
+        if not self.is_enabled(func):
+            return
         logger.info('Broadcast {}'.format(func))
         agent = self.agent
         await agent.send(cmd.Broadcast(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
+
+    async def broadcast(self, func, task):
+        if self.connected:
+            await self._broadcast(func)
+
         self._tasks[func] = task
+        self._broadcast_tasks.append(func)
 
     async def remove_func(self, func):
         logger.info('Remove {}'.format(func))
@@ -147,9 +159,11 @@ class Worker(BaseClient):
                 await job.fail()
 
     # decorator
-    def func(self, func_name):
+    def func(self, func_name, broadcast=False):
         def _func(task):
             self._tasks[func_name] = task
+            if broadcast:
+                self._broadcast_tasks.append(func_name)
             return task
 
         return _func
@@ -171,7 +185,7 @@ class WorkerCluster(BaseCluster):
                              reduce=reduce,
                              initialize=True)
 
-    async def add_func(self, func, task=None):
+    async def add_func(self, func, task):
         await self.run('add_func', func, task)
 
     async def broadcast(self, func, task):
@@ -184,12 +198,12 @@ class WorkerCluster(BaseCluster):
         await self.run('work', size)
 
     # decorator
-    def func(self, func_name):
+    def func(self, func_name, broadcast=False):
         def _func(task):
             def reduce(_, call):
                 call(task)
 
-            self.run_sync('func', func_name, reduce=reduce)
+            self.run_sync('func', func_name, broadcast, reduce=reduce)
 
             return task
 
