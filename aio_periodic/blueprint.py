@@ -1,5 +1,6 @@
 from .rsp import DoneResponse
 
+
 class Blueprint(object):
     def __init__(self):
         self.tasks = {}
@@ -35,7 +36,7 @@ class Blueprint(object):
     def func(self, func_name, broadcast=False, defrsp=DoneResponse()):
         def _func(task):
             self.tasks[func_name] = task
-            self.defrsps[func] = defrsp
+            self.defrsps[func_name] = defrsp
             if broadcast:
                 self.broadcast_tasks.append(func_name)
 
