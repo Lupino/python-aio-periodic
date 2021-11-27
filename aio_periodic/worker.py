@@ -1,4 +1,5 @@
-from .job import Job, DoneResponse, FailResponse, SchedLaterResponse
+from .job import Job
+from .rsp import DoneResponse, FailResponse, SchedLaterResponse
 from .types.utils import TYPE_WORKER
 from .types.base_client import BaseClient, BaseCluster
 from .types import command as cmd
@@ -31,6 +32,8 @@ class Worker(BaseClient):
     def __init__(self, enabled_tasks=[]):
         BaseClient.__init__(self, TYPE_WORKER, self._message_callback,
                             self._on_connected)
+
+        self.defrsps = {}
         self._tasks = {}
         self._broadcast_tasks = []
         self.enabled_tasks = enabled_tasks
@@ -88,11 +91,12 @@ class Worker(BaseClient):
         await agent.send(cmd.CanDo(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
 
-    async def add_func(self, func, task):
+    async def add_func(self, func, task, defrsp=DoneResponse()):
         if self.connected:
             await self._add_func(func)
 
         self._tasks[func] = task
+        self.defrsps[func] = defrsp
 
     async def _broadcast(self, func):
         if not self.is_enabled(func):
@@ -102,11 +106,12 @@ class Worker(BaseClient):
         await agent.send(cmd.Broadcast(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
 
-    async def broadcast(self, func, task):
+    async def broadcast(self, func, task, defrsp=DoneResponse()):
         if self.connected:
             await self._broadcast(func)
 
         self._tasks[func] = task
+        self.defrsps[func] = defrsp
         self._broadcast_tasks.append(func)
 
     async def remove_func(self, func):
@@ -115,6 +120,9 @@ class Worker(BaseClient):
         await agent.send(cmd.CantDo(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
         self._tasks.pop(func, None)
+        self.defrsps.pop(func, None)
+        if func in self._broadcast_tasks:
+            self._broadcast_tasks.remove(func)
 
     async def next_grab(self):
         for agent in self.grab_agents.values():
@@ -158,28 +166,29 @@ class Worker(BaseClient):
                 else:
                     ret = task(job)
 
-                if not job.finished:
-                    if isinstance(ret, str):
-                        await job.done(bytes(ret, 'utf-8'))
-                    elif isinstance(ret, bytes):
-                        await job.done(ret)
-                    elif isinstance(ret, DoneResponse):
-                        await job.done(ret.buf)
-                    elif isinstance(ret, FailResponse):
-                        await job.fail()
-                    elif isinstance(ret, SchedLaterResponse):
-                        await job.sched_later(ret.delay, ret.count)
-                    else:
-                        await job.done()
             except Exception as e:
                 logger.exception(e)
-                if not job.finished:
+                ret = self.defrsps.get(job.func_name, FailResponse())
+
+            if not job.finished:
+                if isinstance(ret, str):
+                    await job.done(bytes(ret, 'utf-8'))
+                elif isinstance(ret, bytes):
+                    await job.done(ret)
+                elif isinstance(ret, DoneResponse):
+                    await job.done(ret.buf)
+                elif isinstance(ret, FailResponse):
                     await job.fail()
+                elif isinstance(ret, SchedLaterResponse):
+                    await job.sched_later(ret.delay, ret.count)
+                else:
+                    await job.done()
 
     # decorator
-    def func(self, func_name, broadcast=False):
+    def func(self, func_name, broadcast=False, defrsp=DoneResponse()):
         def _func(task):
             self._tasks[func_name] = task
+            self.defrsps[func_name] = defrsp
             if broadcast:
                 self._broadcast_tasks.append(func_name)
             return task
@@ -188,8 +197,8 @@ class Worker(BaseClient):
 
     def blueprint(self, app):
         app.set_worker(self)
-        for func, task in app.tasks.items():
-            self._tasks[func] = task
+        self._tasks.update(app.tasks)
+        self.defrsps.update(app.defrsps)
 
         for btsk in app.broadcast_tasks:
             self._broadcast_tasks.append(btsk)
@@ -211,11 +220,11 @@ class WorkerCluster(BaseCluster):
                              reduce=reduce,
                              initialize=True)
 
-    async def add_func(self, func, task):
-        await self.run('add_func', func, task)
+    async def add_func(self, func, task, defrsp=DoneResponse()):
+        await self.run('add_func', func, task, defrsp)
 
-    async def broadcast(self, func, task):
-        await self.run('broadcast', func, task)
+    async def broadcast(self, func, task, defrsp=DoneResponse()):
+        await self.run('broadcast', func, task, defrsp)
 
     async def remove_func(self, func):
         await self.run('remove_func', func)
@@ -224,12 +233,12 @@ class WorkerCluster(BaseCluster):
         await self.run('work', size)
 
     # decorator
-    def func(self, func_name, broadcast=False):
+    def func(self, func_name, broadcast=False, defrsp=DoneResponse()):
         def _func(task):
             def reduce(_, call):
                 call(task)
 
-            self.run_sync('func', func_name, broadcast, reduce=reduce)
+            self.run_sync('func', func_name, broadcast, defrsp, reduce=reduce)
 
             return task
 
