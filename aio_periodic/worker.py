@@ -1,4 +1,4 @@
-from .job import Job
+from .job import Job, DoneResponse, FailResponse, SchedLaterResponse
 from .types.utils import TYPE_WORKER
 from .types.base_client import BaseClient, BaseCluster
 from .types import command as cmd
@@ -153,7 +153,24 @@ class Worker(BaseClient):
             await job.fail()
         else:
             try:
-                await task(job)
+                if asyncio.iscoroutinefunction(task):
+                    ret = await task(job)
+                else:
+                    ret = task(job)
+
+                if not job.finished:
+                    if isinstance(ret, str):
+                        await job.done(bytes(ret, 'utf-8'))
+                    elif isinstance(ret, bytes):
+                        await job.done(ret)
+                    elif isinstance(ret, DoneResponse):
+                        await job.done(ret.buf)
+                    elif isinstance(ret, FailResponse):
+                        await job.fail()
+                    elif isinstance(ret, SchedLaterResponse):
+                        await job.sched_later(ret.delay, ret.count)
+                    else:
+                        await job.done()
             except Exception as e:
                 logger.exception(e)
                 if not job.finished:

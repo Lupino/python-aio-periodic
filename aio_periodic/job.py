@@ -1,6 +1,7 @@
 from .types import utils
 from .types.job import Job as J
 from .types import command as cmd
+import json as jsonLib
 
 
 class FinishedError(Exception):
@@ -77,3 +78,38 @@ class Job(object):
     @property
     def workload(self):
         return self.payload.workload
+
+    @property
+    def workload_json(self):
+        return jsonLib.loads(str(self.payload.workload, 'utf-8'))
+
+
+class DoneResponse(object):
+    def __init__(self, buf=b''):
+        self.buf = buf
+
+
+class FailResponse(object):
+    pass
+
+
+class SchedLaterResponse(object):
+    def __init__(self, delay, count=0):
+        self.delay = delay
+        self.count = count
+
+
+def done(buf=b''):
+    return DoneResponse(buf)
+
+
+def json(data):
+    return DoneResponse(bytes(jsonLib.dumps(data), 'utf-8'))
+
+
+def fail():
+    return FailResponse()
+
+
+def sched_later(delay, count=0):
+    return SchedLaterResponse(delay, count)
