@@ -1,4 +1,5 @@
 import struct
+import json
 
 MAGIC_REQUEST = b'\x00REQ'
 MAGIC_RESPONSE = b'\x00RES'
@@ -14,16 +15,20 @@ def to_bytes(s):
         return s
     elif isinstance(s, str):
         return bytes(s, 'utf-8')
+    elif isinstance(s, dict) or isinstance(s, list):
+        return bytes(json.dumps(s), 'utf-8')
     else:
         return bytes(str(s), 'utf-8')
 
 
 def encode_str8(data):
-    return encode_int8(len(data)) + to_bytes(data)
+    data = to_bytes(data)
+    return encode_int8(len(data)) + data
 
 
 def encode_str32(data):
-    return encode_int32(len(data)) + to_bytes(data)
+    data = to_bytes(data)
+    return encode_int32(len(data)) + data
 
 
 def encode_int8(n=0):
