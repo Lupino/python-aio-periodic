@@ -156,7 +156,8 @@ class Worker(BaseClient):
                 await task(job)
             except Exception as e:
                 logger.exception(e)
-                await job.fail()
+                if not job.finished:
+                    await job.fail()
 
     # decorator
     def func(self, func_name, broadcast=False):

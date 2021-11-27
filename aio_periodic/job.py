@@ -3,6 +3,10 @@ from .types.job import Job as J
 from .types import command as cmd
 
 
+class FinishedError(Exception):
+    pass
+
+
 class Job(object):
     def __init__(self, payload, w):
 
@@ -13,13 +17,24 @@ class Job(object):
 
         self.w = w
 
+        self.finished = False
+
+    def _check_finished(self):
+        if self.finished:
+            raise FinishedError('Job is already finished')
+
+        self.finished = True
+
     async def done(self, buf=b''):
+        self._check_finished()
         await self.w.agent.send(cmd.WorkDone(self.job_handle, buf))
 
     async def sched_later(self, delay, count=0):
+        self._check_finished()
         await self.w.agent.send(cmd.SchedLater(self.job_handle, delay, count))
 
     async def fail(self):
+        self._check_finished()
         await self.w.agent.send(cmd.WorkFail(self.job_handle))
 
     async def acquire(self, name, count):
@@ -29,6 +44,8 @@ class Job(object):
         if payload[0:1] == cmd.ACQUIRED:
             if payload[1] == 1:
                 return True
+
+        self.finished = True
         return False
 
     async def release(self, name):
