@@ -52,10 +52,10 @@ class Worker(BaseClient):
 
     def _add_prefix_subfix(self, func):
         if self.prefix:
-            func = '{}{}'.format(self.prefix, func)
+            func = f'{self.prefix}{func}'
 
         if self.subfix:
-            func = '{}{}'.format(func, self.subfix)
+            func = f'{func}{self.subfix}'
 
         return func
 
@@ -86,7 +86,7 @@ class Worker(BaseClient):
     async def _add_func(self, func):
         if not self.is_enabled(func):
             return
-        logger.info('Add {}'.format(func))
+        logger.info(f'Add {func}')
         agent = self.agent
         await agent.send(cmd.CanDo(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
@@ -101,7 +101,7 @@ class Worker(BaseClient):
     async def _broadcast(self, func):
         if not self.is_enabled(func):
             return
-        logger.info('Broadcast {}'.format(func))
+        logger.info(f'Broadcast {func}')
         agent = self.agent
         await agent.send(cmd.Broadcast(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
@@ -115,7 +115,7 @@ class Worker(BaseClient):
         self._broadcast_tasks.append(func)
 
     async def remove_func(self, func):
-        logger.info('Remove {}'.format(func))
+        logger.info(f'Remove {func}')
         agent = self.agent
         await agent.send(cmd.CantDo(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
