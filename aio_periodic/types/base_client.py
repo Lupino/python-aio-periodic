@@ -41,6 +41,31 @@ class BaseClient(object):
         self._send_timer = 0
         self._processes = []
 
+        self.prefix = None
+        self.subfix = None
+
+    def set_prefix(self, prefix):
+        self.prefix = prefix
+
+    def set_subfix(self, subfix):
+        self.subfix = subfix
+
+    def _add_prefix_subfix(self, func):
+        if self.prefix:
+            func = f'{self.prefix}{func}'
+
+        if self.subfix:
+            func = f'{func}{self.subfix}'
+
+        return func
+
+    def _strip_prefix_subfix(self, func):
+        if self.prefix and func.startswith(self.prefix):
+            func = func[len(self.prefix):]
+        if self.subfix and func.endswith(self.subfix):
+            func = func[:-len(self.subfix)]
+        return func
+
     def initialize(self):
         self._initialized = True
         self.connected_evt = asyncio.Event()
@@ -232,6 +257,8 @@ class BaseClient(object):
         agent = self.agent
         if job is None:
             job = Job(*args, **kwargs)
+
+        job.func = self._add_prefix_subfix(job.func)
         await agent.send(cmd.SubmitJob(job))
         payload = await agent.receive()
         self.remove_agent(agent)
@@ -244,6 +271,8 @@ class BaseClient(object):
         agent = self.agent
         if job is None:
             job = Job(*args, **kwargs)
+
+        job.func = self._add_prefix_subfix(job.func)
         await agent.send(cmd.RunJob(job))
         payload = await agent.receive()
         self.remove_agent(agent)
@@ -257,6 +286,7 @@ class BaseClient(object):
 
     async def remove_job(self, func, name):
         agent = self.agent
+        func = self._add_prefix_subfix(func)
         await agent.send(cmd.RemoveJob(func, name))
         payload = await agent.receive()
         self.remove_agent(agent)
@@ -291,6 +321,7 @@ class BaseClient(object):
 
     async def drop_func(self, func):
         agent = self.agent
+        func = self._add_prefix_subfix(func)
         await agent.send(cmd.DropFunc(func))
         payload = await agent.receive()
         self.remove_agent(agent)
@@ -352,6 +383,12 @@ class BaseCluster(object):
                 retval = reduce(retval, ret)
 
         return retval
+
+    def set_prefix(self, prefix):
+        self.run_sync('set_prefix', prefix)
+
+    def set_subfix(self, subfix):
+        self.run_sync('set_subfix', subfix)
 
     async def connect(self, connector=None, *args):
         '''connect to servers'''

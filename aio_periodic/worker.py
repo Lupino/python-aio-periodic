@@ -39,32 +39,7 @@ class Worker(BaseClient):
         self.enabled_tasks = enabled_tasks
         self._pool = None
 
-        self.prefix = None
-        self.subfix = None
-
         self.grab_agents = {}
-
-    def set_prefix(self, prefix):
-        self.prefix = prefix
-
-    def set_subfix(self, subfix):
-        self.subfix = subfix
-
-    def _add_prefix_subfix(self, func):
-        if self.prefix:
-            func = f'{self.prefix}{func}'
-
-        if self.subfix:
-            func = f'{func}{self.subfix}'
-
-        return func
-
-    def _strip_prefix_subfix(self, func):
-        if self.prefix and func.startswith(self.prefix):
-            func = func[len(self.prefix):]
-        if self.subfix and func.endswith(self.subfix):
-            func = func[:-len(self.subfix)]
-        return func
 
     def set_enable_tasks(self, enabled_tasks):
         self.enabled_tasks = enabled_tasks
