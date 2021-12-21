@@ -34,6 +34,7 @@ class Worker(BaseClient):
                             self._on_connected)
 
         self.defrsps = {}
+        self.lockers = {}
         self._tasks = {}
         self._broadcast_tasks = []
         self.enabled_tasks = enabled_tasks
@@ -66,12 +67,13 @@ class Worker(BaseClient):
         await agent.send(cmd.CanDo(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
 
-    async def add_func(self, func, task, defrsp=DoneResponse()):
+    async def add_func(self, func, task, defrsp=DoneResponse(), locker=None):
         if self.connected:
             await self._add_func(func)
 
         self._tasks[func] = task
         self.defrsps[func] = defrsp
+        self.lockers[func] = locker
 
     async def _broadcast(self, func):
         if not self.is_enabled(func):
@@ -81,12 +83,13 @@ class Worker(BaseClient):
         await agent.send(cmd.Broadcast(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
 
-    async def broadcast(self, func, task, defrsp=DoneResponse()):
+    async def broadcast(self, func, task, defrsp=DoneResponse(), locker=None):
         if self.connected:
             await self._broadcast(func)
 
         self._tasks[func] = task
         self.defrsps[func] = defrsp
+        self.lockers[func] = locker
         self._broadcast_tasks.append(func)
 
     async def remove_func(self, func):
@@ -96,6 +99,7 @@ class Worker(BaseClient):
         self.remove_agent(agent)
         self._tasks.pop(func, None)
         self.defrsps.pop(func, None)
+        self.lockers.pop(func, None)
         if func in self._broadcast_tasks:
             self._broadcast_tasks.remove(func)
 
@@ -135,6 +139,18 @@ class Worker(BaseClient):
             await self.remove_func(job.func_name)
             await job.fail()
         else:
+
+            async def process():
+                await self._process_job(job, task)
+
+            locker = self.lockers.get(job.func_name)
+            if locker:
+                locker_name, count = locker(job)
+                await job.with_lock(locker_name, count, process)
+            else:
+                await process()
+
+    async def _process_job(self, job, task):
             try:
                 if asyncio.iscoroutinefunction(task):
                     ret = await task(job)
@@ -160,10 +176,11 @@ class Worker(BaseClient):
                     await job.done()
 
     # decorator
-    def func(self, func_name, broadcast=False, defrsp=DoneResponse()):
+    def func(self, func_name, broadcast=False, defrsp=DoneResponse(), locker=None):
         def _func(task):
             self._tasks[func_name] = task
             self.defrsps[func_name] = defrsp
+            self.lockers[func_name] = locker
             if broadcast:
                 self._broadcast_tasks.append(func_name)
             return task
@@ -174,6 +191,7 @@ class Worker(BaseClient):
         app.set_worker(self)
         self._tasks.update(app.tasks)
         self.defrsps.update(app.defrsps)
+        self.lockers.update(app.lockers)
 
         for btsk in app.broadcast_tasks:
             self._broadcast_tasks.append(btsk)
@@ -195,11 +213,11 @@ class WorkerCluster(BaseCluster):
                              reduce=reduce,
                              initialize=True)
 
-    async def add_func(self, func, task, defrsp=DoneResponse()):
-        await self.run('add_func', func, task, defrsp)
+    async def add_func(self, func, task, defrsp=DoneResponse(), locker=None):
+        await self.run('add_func', func, task, defrsp, locker)
 
-    async def broadcast(self, func, task, defrsp=DoneResponse()):
-        await self.run('broadcast', func, task, defrsp)
+    async def broadcast(self, func, task, defrsp=DoneResponse(), locker=None):
+        await self.run('broadcast', func, task, defrsp, locker)
 
     async def remove_func(self, func):
         await self.run('remove_func', func)
@@ -208,12 +226,12 @@ class WorkerCluster(BaseCluster):
         await self.run('work', size)
 
     # decorator
-    def func(self, func_name, broadcast=False, defrsp=DoneResponse()):
+    def func(self, func_name, broadcast=False, defrsp=DoneResponse(), locker=None):
         def _func(task):
             def reduce(_, call):
                 call(task)
 
-            self.run_sync('func', func_name, broadcast, defrsp, reduce=reduce)
+            self.run_sync('func', func_name, broadcast, defrsp, locker, reduce=reduce)
 
             return task
 
