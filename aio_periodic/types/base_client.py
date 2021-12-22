@@ -1,7 +1,6 @@
 import asyncio
 from .agent import Agent
 from .utils import decode_int32, MAGIC_RESPONSE, encode_int32
-import uuid
 from .command import PING, PONG, NO_JOB, JOB_ASSIGN
 from . import command as cmd
 from binascii import crc32
@@ -147,8 +146,7 @@ class BaseClient(object):
 
             await asyncio.sleep(1)
 
-    @property
-    def agent(self):
+    async def gen_agent(self):
         async with self._msgid_locker:
             self._last_msgid += 1
             if self._last_msgid > 0xFFFFFF00:
@@ -227,7 +225,7 @@ class BaseClient(object):
                 await asyncio.sleep(delay)
 
     async def ping(self, timeout=10):
-        agent = self.agent
+        agent = await self.gen_agent()
         await agent.send(PING)
         evt = asyncio.Event()
 
@@ -260,7 +258,7 @@ class BaseClient(object):
                 task.cancel()
 
     async def submit_job(self, *args, job=None, **kwargs):
-        agent = self.agent
+        agent = await self.gen_agent()
         if job is None:
             job = Job(*args, **kwargs)
 
@@ -274,7 +272,7 @@ class BaseClient(object):
             return False
 
     async def run_job(self, *args, job=None, **kwargs):
-        agent = self.agent
+        agent = await self.gen_agent()
         if job is None:
             job = Job(*args, **kwargs)
 
@@ -291,7 +289,7 @@ class BaseClient(object):
         return payload
 
     async def remove_job(self, func, name):
-        agent = self.agent
+        agent = await self.gen_agent()
         func = self._add_prefix_subfix(func)
         await agent.send(cmd.RemoveJob(func, name))
         payload = await agent.receive()
@@ -302,7 +300,7 @@ class BaseClient(object):
             return False
 
     async def status(self):
-        agent = self.agent
+        agent = await self.gen_agent()
         await agent.send(cmd.Status())
         payload = await agent.receive()
         self.remove_agent(agent)
@@ -326,7 +324,7 @@ class BaseClient(object):
         return retval
 
     async def drop_func(self, func):
-        agent = self.agent
+        agent = await self.gen_agent()
         func = self._add_prefix_subfix(func)
         await agent.send(cmd.DropFunc(func))
         payload = await agent.receive()

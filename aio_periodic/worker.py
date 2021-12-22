@@ -63,7 +63,7 @@ class Worker(BaseClient):
         if not self.is_enabled(func):
             return
         logger.info(f'Add {func}')
-        agent = self.agent
+        agent = await self.gen_agent()
         await agent.send(cmd.CanDo(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
 
@@ -79,7 +79,7 @@ class Worker(BaseClient):
         if not self.is_enabled(func):
             return
         logger.info(f'Broadcast {func}')
-        agent = self.agent
+        agent = await self.gen_agent()
         await agent.send(cmd.Broadcast(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
 
@@ -94,7 +94,7 @@ class Worker(BaseClient):
 
     async def remove_func(self, func):
         logger.info(f'Remove {func}')
-        agent = self.agent
+        agent = await self.gen_agent()
         await agent.send(cmd.CantDo(self._add_prefix_subfix(func)))
         self.remove_agent(agent)
         self._tasks.pop(func, None)
@@ -111,7 +111,7 @@ class Worker(BaseClient):
 
     async def work(self, size, min_delay=60):
         self._pool = AioPool(size=size)
-        agents = [self.agent for _ in range(size)]
+        agents = [await self.gen_agent() for _ in range(size)]
         for agent in agents:
             self.grab_agents[agent.msgid] = GrabAgent(agent)
 
@@ -153,32 +153,36 @@ class Worker(BaseClient):
                 await process()
 
     async def _process_job(self, job, task):
-            try:
-                if asyncio.iscoroutinefunction(task):
-                    ret = await task(job)
-                else:
-                    ret = task(job)
+        try:
+            if asyncio.iscoroutinefunction(task):
+                ret = await task(job)
+            else:
+                ret = task(job)
 
-            except Exception as e:
-                logger.exception(e)
-                ret = self.defrsps.get(job.func_name, FailResponse())
+        except Exception as e:
+            logger.exception(e)
+            ret = self.defrsps.get(job.func_name, FailResponse())
 
-            if not job.finished:
-                if isinstance(ret, str):
-                    await job.done(bytes(ret, 'utf-8'))
-                elif isinstance(ret, bytes):
-                    await job.done(ret)
-                elif isinstance(ret, DoneResponse):
-                    await job.done(ret.buf)
-                elif isinstance(ret, FailResponse):
-                    await job.fail()
-                elif isinstance(ret, SchedLaterResponse):
-                    await job.sched_later(ret.delay, ret.count)
-                else:
-                    await job.done()
+        if not job.finished:
+            if isinstance(ret, str):
+                await job.done(bytes(ret, 'utf-8'))
+            elif isinstance(ret, bytes):
+                await job.done(ret)
+            elif isinstance(ret, DoneResponse):
+                await job.done(ret.buf)
+            elif isinstance(ret, FailResponse):
+                await job.fail()
+            elif isinstance(ret, SchedLaterResponse):
+                await job.sched_later(ret.delay, ret.count)
+            else:
+                await job.done()
 
     # decorator
-    def func(self, func_name, broadcast=False, defrsp=DoneResponse(), locker=None):
+    def func(self,
+             func_name,
+             broadcast=False,
+             defrsp=DoneResponse(),
+             locker=None):
         def _func(task):
             self._tasks[func_name] = task
             self.defrsps[func_name] = defrsp
@@ -228,12 +232,21 @@ class WorkerCluster(BaseCluster):
         await self.run('work', size)
 
     # decorator
-    def func(self, func_name, broadcast=False, defrsp=DoneResponse(), locker=None):
+    def func(self,
+             func_name,
+             broadcast=False,
+             defrsp=DoneResponse(),
+             locker=None):
         def _func(task):
             def reduce(_, call):
                 call(task)
 
-            self.run_sync('func', func_name, broadcast, defrsp, locker, reduce=reduce)
+            self.run_sync('func',
+                          func_name,
+                          broadcast,
+                          defrsp,
+                          locker,
+                          reduce=reduce)
 
             return task
 

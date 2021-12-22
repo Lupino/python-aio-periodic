@@ -36,7 +36,11 @@ class Blueprint(object):
             raise Exception("Can't call remove_func before apply")
 
     # decorator
-    def func(self, func_name, broadcast=False, defrsp=DoneResponse(), locker=None):
+    def func(self,
+             func_name,
+             broadcast=False,
+             defrsp=DoneResponse(),
+             locker=None):
         def _func(task):
             self.tasks[func_name] = task
             self.defrsps[func_name] = defrsp
