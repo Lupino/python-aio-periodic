@@ -25,7 +25,7 @@ class GrabAgent(object):
             logger.exception(e)
 
     def is_timeout(self):
-        return self.sent_timer + 300 * 60 < time()
+        return self.sent_timer + 5 < time()
 
 
 class Worker(BaseClient):
@@ -41,6 +41,7 @@ class Worker(BaseClient):
         self._pool = None
 
         self.grab_agents = {}
+        self.grab_queue = None
 
     def set_enable_tasks(self, enabled_tasks):
         self.enabled_tasks = enabled_tasks
@@ -104,22 +105,28 @@ class Worker(BaseClient):
             self._broadcast_tasks.remove(func)
 
     async def next_grab(self):
-        for agent in self.grab_agents.values():
+        if self._pool.is_full:
+            return
+        for _ in range(self.grab_queue.qsize()):
+            agent = await self.grab_queue.get()
+            await self.grab_queue.put(agent)
             if agent.is_timeout():
                 await agent.safe_send()
                 break
 
-    async def work(self, size, min_delay=60):
+    async def work(self, size):
         self._pool = AioPool(size=size)
         agents = [await self.gen_agent() for _ in range(size)]
-        for agent in agents:
-            self.grab_agents[agent.msgid] = GrabAgent(agent)
+        self.grab_queue = asyncio.Queue()
 
-        delay = max(min_delay, int(300 / size))
+        for agent in agents:
+            item = GrabAgent(agent)
+            await self.grab_queue.put(item)
+            self.grab_agents[agent.msgid] = item
 
         while True:
             await self.next_grab()
-            await asyncio.sleep(delay)
+            await asyncio.sleep(1)
 
     async def _message_callback(self, payload, msgid):
         await self.next_grab()
