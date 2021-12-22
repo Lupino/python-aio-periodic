@@ -146,13 +146,25 @@ class BaseClient(object):
 
             await asyncio.sleep(1)
 
-    async def gen_agent(self):
-        async with self._msgid_locker:
+    def get_next_msgid(self):
+        for _ in range(1000000):
             self._last_msgid += 1
             if self._last_msgid > 0xFFFFFF00:
                 self._last_msgid = 0
 
+            if self._last_msgid % 100000 == 0:
+                count = len(self.agents.keys())
+                logger.info(f'Last msgid {self._last_msgid} Agents {count}')
+
             msgid = encode_int32(self._last_msgid)
+            if not self.agents.get(msgid):
+                return msgid
+
+        raise Exception('Not enough msgid avaliable')
+
+    async def gen_agent(self):
+        async with self._msgid_locker:
+            msgid = self.get_next_msgid()
 
         agent = Agent(self, msgid)
         self.agents[msgid] = agent
