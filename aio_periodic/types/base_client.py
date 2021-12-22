@@ -1,6 +1,6 @@
 import asyncio
 from .agent import Agent
-from .utils import decode_int32, MAGIC_RESPONSE
+from .utils import decode_int32, MAGIC_RESPONSE, encode_int32
 import uuid
 from .command import PING, PONG, NO_JOB, JOB_ASSIGN
 from . import command as cmd
@@ -29,6 +29,8 @@ class BaseClient(object):
         self._buffer = b''
         self._clientType = clientType
         self.agents = dict()
+        self._msgid_locker = None
+        self._last_msgid = 0
 
         self._on_connected = on_connected
 
@@ -70,6 +72,7 @@ class BaseClient(object):
         self._initialized = True
         self.connected_evt = asyncio.Event()
         self._send_locker = asyncio.Lock()
+        self._msgid_locker = asyncio.Lock()
 
         task = asyncio.create_task(self.loop_agent())
         self._processes.append(task)
@@ -146,9 +149,12 @@ class BaseClient(object):
 
     @property
     def agent(self):
-        msgid = bytes(uuid.uuid4().hex[:4], 'utf-8')
-        while self.agents.get(msgid):
-            msgid = bytes(uuid.uuid4().hex[:4], 'utf-8')
+        async with self._msgid_locker:
+            self._last_msgid += 1
+            if self._last_msgid > 0xFFFFFF00:
+                self._last_msgid = 0
+
+            msgid = encode_int32(self._last_msgid)
 
         agent = Agent(self, msgid)
         self.agents[msgid] = agent
