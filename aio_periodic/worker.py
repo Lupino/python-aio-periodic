@@ -129,6 +129,8 @@ class Worker(BaseClient):
         try:
             job = Job(payload[1:], self)
             await self.process_job(job)
+        except asyncio.exceptions.CancelledError:
+            pass
         finally:
             agent = self.grab_agents[msgid]
             await agent.safe_send()
