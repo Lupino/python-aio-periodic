@@ -30,21 +30,25 @@ class Job(object):
         self._check_finished()
         agent = await self.w.gen_agent()
         await agent.send(cmd.WorkDone(self.job_handle, buf))
+        self.w.remove_agent(agent)
 
     async def sched_later(self, delay, count=0):
         self._check_finished()
         agent = await self.w.gen_agent()
         await agent.send(cmd.SchedLater(self.job_handle, delay, count))
+        self.w.remove_agent(agent)
 
     async def fail(self):
         self._check_finished()
         agent = await self.w.gen_agent()
         await agent.send(cmd.WorkFail(self.job_handle))
+        self.w.remove_agent(agent)
 
     async def acquire(self, name, count):
         agent = await self.w.gen_agent()
         await agent.send(cmd.Acquire(name, count, self.job_handle))
         payload = await agent.receive()
+        self.w.remove_agent(agent)
         if payload[0:1] == cmd.ACQUIRED:
             if payload[1] == 1:
                 return True
@@ -55,6 +59,7 @@ class Job(object):
     async def release(self, name):
         agent = await self.w.gen_agent()
         await agent.send(cmd.Release(name, self.job_handle))
+        self.w.remove_agent(agent)
 
     async def with_lock(self, name, count, task, release=False):
         acquired = await self.acquire(name, count)
