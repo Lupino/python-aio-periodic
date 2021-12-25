@@ -42,9 +42,14 @@ class Worker(BaseClient):
 
         self.grab_agents = {}
         self.grab_queue = None
+        self.executor = None
 
     def set_enable_tasks(self, enabled_tasks):
         self.enabled_tasks = enabled_tasks
+
+    def set_executor(self, executor):
+        '''executer for sync process'''
+        self.executor = executor
 
     def is_enabled(self, func):
         if len(self.enabled_tasks) == 0:
@@ -155,16 +160,24 @@ class Worker(BaseClient):
             locker = self.lockers.get(job.func_name)
             if locker:
                 locker_name, count = locker(job)
-                await job.with_lock(locker_name, count, process)
-            else:
-                await process()
+                if locker_name:
+                    await job.with_lock(locker_name, count, process)
+                    return
+
+            await process()
 
     async def _process_job(self, job, task):
         try:
             if asyncio.iscoroutinefunction(task):
                 ret = await task(job)
             else:
-                ret = task(job)
+                if self.executor:
+                    loop = asyncio.get_running_loop()
+                    task = loop.run_in_executor(self.executor, task, job)
+                    await asyncio.wait([task])
+                    ret = task.result()
+                else:
+                    ret = task(job)
 
         except Exception as e:
             logger.exception(e)
