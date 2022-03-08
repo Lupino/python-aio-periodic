@@ -2,14 +2,33 @@ from .utils import MAGIC_REQUEST, encode_int32, to_bytes
 from binascii import crc32
 from time import time
 import asyncio
+import async_timeout
 
 
 class Agent(object):
-    def __init__(self, client, msgid):
-        self.msgid = msgid
+    def __init__(self, client, timeout=10):
+        self.msgid = None
         self._buffer = []
         self._waiters = []
         self.client = client
+        self.timeout = timeout
+
+    def __enter__(self):
+        self.msgid = self.client.get_next_msgid()
+        self.client.agents[self.msgid] = self
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.msgid:
+            self.client.agents.pop(agent.msgid, None)
+
+    async def __aenter__(self):
+        async with self.client.msgid_locker:
+            return self.__enter__()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        async with self.client.msgid_locker:
+            self.__exit__(self, exc_type, exc_val, exc_tb)
 
     def feed_data(self, data):
         self._buffer.insert(0, data)
@@ -18,10 +37,11 @@ class Agent(object):
             waiter.set()
 
     async def receive(self):
-        if len(self._buffer) == 0:
-            waiter = self._make_waiter()
-            await waiter.wait()
-        return self._buffer.pop()
+        async with async_timeout.timeout(self.timeout):
+            if len(self._buffer) == 0:
+                waiter = self._make_waiter()
+                await waiter.wait()
+            return self._buffer.pop()
 
     def buffer_len(self):
         return len(self._buffer)

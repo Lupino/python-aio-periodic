@@ -1,7 +1,7 @@
 import asyncio
 from .agent import Agent
 from .utils import decode_int32, MAGIC_RESPONSE, encode_int32
-from .command import PING, PONG, NO_JOB, JOB_ASSIGN
+from .command import PING, PONG, NO_JOB, JOB_ASSIGN, SUCCESS
 from . import command as cmd
 from binascii import crc32
 from .job import Job
@@ -18,6 +18,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def is_success(payload):
+    return payload == SUCCESS
+
+
 class BaseClient(object):
     def __init__(self, clientType, message_callback=None, on_connected=None):
 
@@ -29,7 +33,7 @@ class BaseClient(object):
         self._buffer = b''
         self._clientType = clientType
         self.agents = dict()
-        self._msgid_locker = None
+        self.msgid_locker = None
         self._last_msgid = 0
 
         self._on_connected = on_connected
@@ -72,7 +76,7 @@ class BaseClient(object):
         self._initialized = True
         self.connected_evt = asyncio.Event()
         self._send_locker = asyncio.Lock()
-        self._msgid_locker = asyncio.Lock()
+        self.msgid_locker = asyncio.Lock()
 
         task = asyncio.create_task(self.loop_agent())
         self._processes.append(task)
@@ -163,13 +167,9 @@ class BaseClient(object):
 
         raise Exception('Not enough msgid avaliable')
 
-    async def gen_agent(self):
-        async with self._msgid_locker:
-            msgid = self.get_next_msgid()
 
-        agent = Agent(self, msgid)
-        self.agents[msgid] = agent
-        return agent
+    def agent(self, timeout=10):
+        return Agent(self, timeout)
 
     def get_writer(self):
         return self._writer
@@ -237,24 +237,24 @@ class BaseClient(object):
 
                 await asyncio.sleep(delay)
 
-    async def ping(self, wait_delay=10):
-        agent = await self.gen_agent()
-        await agent.send(PING)
+    async def send_command_and_receive(self, command, parse=None, timeout=10):
+        async with self.agent(timeout) as agent:
+            await agent.send(command)
+            payload = await agent.receive()
+            if parse:
+                return parse(payload)
+            else:
+                return payload
 
-        try:
-            async with timeout(wait_delay):
-                payload = await agent.receive()
-                if payload == PONG:
-                    return True
-        except Exception:
-            pass
-        finally:
-            self.remove_agent(agent)
+    async def send_command(self, command):
+        async with self.agent(timeout) as agent:
+            await agent.send(command)
 
-        return False
+    def ping(self, timeout=10):
+        def is_pong(payload):
+            return payload == PONG
 
-    def remove_agent(self, agent):
-        self.agents.pop(agent.msgid, None)
+        return self.send_command_and_receive(PING, is_pong)
 
     def close(self, force=False):
         if self._writer:
@@ -264,92 +264,66 @@ class BaseClient(object):
             for task in self._processes:
                 task.cancel()
 
-    async def submit_job(self, *args, job=None, **kwargs):
-        agent = await self.gen_agent()
+    def submit_job(self, *args, job=None, **kwargs):
         if job is None:
             job = Job(*args, **kwargs)
 
         job.func = self._add_prefix_subfix(job.func)
-        await agent.send(cmd.SubmitJob(job))
-        payload = await agent.receive()
-        self.remove_agent(agent)
-        if payload == cmd.SUCCESS:
-            return True
-        else:
-            return False
 
-    async def run_job(self, *args, job=None, **kwargs):
-        agent = await self.gen_agent()
+        return self.send_command_and_receive(cmd.SubmitJob(job), is_success)
+
+    def run_job(self, *args, job=None, **kwargs):
         if job is None:
             job = Job(*args, **kwargs)
 
         job.func = self._add_prefix_subfix(job.func)
-        await agent.send(cmd.RunJob(job))
-        wait_delay = job.timeout
-        if wait_delay == 0:
-            wait_delay = 60
 
-        try:
-            async with timeout(wait_delay):
-                payload = await agent.receive()
-        except Exception:
-            raise Exception('timeout')
-        finally:
-            self.remove_agent(agent)
+        timeout = job.timeout
+        if timeout == 0:
+            timeout = 10
 
-        if payload[0] == cmd.NO_WORKER[0]:
-            raise Exception('no worker')
+        def parse(payload):
+            if payload[0] == cmd.NO_WORKER[0]:
+                raise Exception('no worker')
 
-        if payload[0] == cmd.DATA[0]:
-            return payload[1:]
+            if payload[0] == cmd.DATA[0]:
+                return payload[1:]
 
-        return payload
+            return payload
 
-    async def remove_job(self, func, name):
-        agent = await self.gen_agent()
+        return self.send_command_and_receive(cmd.RunJob(job), parse, timeout)
+
+    def remove_job(self, func, name):
         func = self._add_prefix_subfix(func)
-        await agent.send(cmd.RemoveJob(func, name))
-        payload = await agent.receive()
-        self.remove_agent(agent)
-        if payload == cmd.SUCCESS:
-            return True
-        else:
-            return False
+        command = cmd.RemoveJob(func, name)
+        return self.send_command_and_receive(command, is_success)
 
-    async def status(self):
-        agent = await self.gen_agent()
-        await agent.send(cmd.Status())
-        payload = await agent.receive()
-        self.remove_agent(agent)
-        payload = str(payload, 'utf-8').strip()
-        stats = payload.split('\n')
-        retval = {}
-        for stat in stats:
-            stat = stat.strip()
-            if not stat:
-                continue
-            stat = stat.split(',')
-            retval[stat[0]] = {
-                'func_name': stat[0],
-                'worker_count': int(stat[1]),
-                'job_count': int(stat[2]),
-                'processing': int(stat[3]),
-                'locked': int(stat[4]),
-                'sched_at': int(stat[5])
-            }
+    def status(self):
+        def parse(payload):
+            payload = str(payload, 'utf-8').strip()
+            stats = payload.split('\n')
+            retval = {}
+            for stat in stats:
+                stat = stat.strip()
+                if not stat:
+                    continue
+                stat = stat.split(',')
+                retval[stat[0]] = {
+                    'func_name': stat[0],
+                    'worker_count': int(stat[1]),
+                    'job_count': int(stat[2]),
+                    'processing': int(stat[3]),
+                    'locked': int(stat[4]),
+                    'sched_at': int(stat[5])
+                }
 
-        return retval
+            return retval
 
-    async def drop_func(self, func):
-        agent = await self.gen_agent()
+        return self.send_command_and_receive(cmd.Status(), parse)
+
+    def drop_func(self, func):
         func = self._add_prefix_subfix(func)
-        await agent.send(cmd.DropFunc(func))
-        payload = await agent.receive()
-        self.remove_agent(agent)
-        if payload == cmd.SUCCESS:
-            return True
-        else:
-            return False
+        return self.send_command_and_receive(cmd.DropFunc(func), is_success)
 
     async def connected_wait(self):
         return await self.connected_evt.wait()

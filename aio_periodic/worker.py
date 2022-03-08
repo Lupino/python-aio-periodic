@@ -69,9 +69,7 @@ class Worker(BaseClient):
         if not self.is_enabled(func):
             return
         logger.info(f'Add {func}')
-        agent = await self.gen_agent()
-        await agent.send(cmd.CanDo(self._add_prefix_subfix(func)))
-        self.remove_agent(agent)
+        await self.send_command(cmd.CanDo(self._add_prefix_subfix(func)))
 
     async def add_func(self, func, task, defrsp=DoneResponse(), locker=None):
         if self.connected:
@@ -85,9 +83,7 @@ class Worker(BaseClient):
         if not self.is_enabled(func):
             return
         logger.info(f'Broadcast {func}')
-        agent = await self.gen_agent()
-        await agent.send(cmd.Broadcast(self._add_prefix_subfix(func)))
-        self.remove_agent(agent)
+        await self.send_command(cmd.Broadcast(self._add_prefix_subfix(func)))
 
     async def broadcast(self, func, task, defrsp=DoneResponse(), locker=None):
         if self.connected:
@@ -100,9 +96,7 @@ class Worker(BaseClient):
 
     async def remove_func(self, func):
         logger.info(f'Remove {func}')
-        agent = await self.gen_agent()
-        await agent.send(cmd.CantDo(self._add_prefix_subfix(func)))
-        self.remove_agent(agent)
+        await self.send_command(cmd.CantDo(self._add_prefix_subfix(func)))
         self._tasks.pop(func, None)
         self.defrsps.pop(func, None)
         self.lockers.pop(func, None)
@@ -121,10 +115,11 @@ class Worker(BaseClient):
 
     async def work(self, size):
         self._pool = AioPool(size=size)
-        agents = [await self.gen_agent() for _ in range(size)]
+        agents = [self.agent() for _ in range(size)]
         self.grab_queue = asyncio.Queue()
 
         for agent in agents:
+            agent.__enter__()
             item = GrabAgent(agent)
             await self.grab_queue.put(item)
             self.grab_agents[agent.msgid] = item
