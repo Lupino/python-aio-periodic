@@ -6,6 +6,7 @@ from . import command as cmd
 from binascii import crc32
 from .job import Job
 from time import time
+from async_timeout import timeout
 
 try:
     from uhashring import HashRing
@@ -236,27 +237,21 @@ class BaseClient(object):
 
                 await asyncio.sleep(delay)
 
-    async def ping(self, timeout=10):
+    async def ping(self, wait_delay=10):
         agent = await self.gen_agent()
         await agent.send(PING)
-        evt = asyncio.Event()
-
-        async def receive():
-            payload = await agent.receive()
-            self.agents.pop(agent.msgid)
-            if payload == PONG:
-                evt.set()
-
-        task1 = asyncio.create_task(receive())
 
         try:
-            await asyncio.wait_for(evt.wait(), timeout)
-        except asyncio.TimeoutError:
+            async with timeout(wait_delay):
+                payload = await agent.receive()
+                if payload == PONG:
+                    return True
+        except Exception:
             pass
+        finally:
+            self.remove_agent(agent)
 
-        task1.cancel()
-
-        return evt.is_set()
+        return False
 
     def remove_agent(self, agent):
         self.agents.pop(agent.msgid, None)
