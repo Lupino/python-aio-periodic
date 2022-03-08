@@ -285,8 +285,18 @@ class BaseClient(object):
 
         job.func = self._add_prefix_subfix(job.func)
         await agent.send(cmd.RunJob(job))
-        payload = await agent.receive()
-        self.remove_agent(agent)
+        wait_delay = job.timeout
+        if wait_delay == 0:
+            wait_delay = 60
+
+        try:
+            async with timeout(wait_delay):
+                payload = await agent.receive()
+        except Exception:
+            raise Exception('timeout')
+        finally:
+            self.remove_agent(agent)
+
         if payload[0] == cmd.NO_WORKER[0]:
             raise Exception('no worker')
 
