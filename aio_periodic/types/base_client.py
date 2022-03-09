@@ -277,9 +277,10 @@ class BaseClient(object):
 
         job.func = self._add_prefix_subfix(job.func)
 
+        if job.timeout == 0:
+            job.timeout = 10
+
         timeout = job.timeout
-        if timeout == 0:
-            timeout = 10
 
         def parse(payload):
             if payload[0] == cmd.NO_WORKER[0]:
