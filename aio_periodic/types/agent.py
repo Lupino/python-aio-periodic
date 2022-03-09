@@ -20,7 +20,7 @@ class Agent(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.msgid:
-            self.client.agents.pop(agent.msgid, None)
+            self.client.agents.pop(self.msgid, None)
 
     async def __aenter__(self):
         async with self.client.msgid_locker:
@@ -28,7 +28,7 @@ class Agent(object):
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         async with self.client.msgid_locker:
-            self.__exit__(self, exc_type, exc_val, exc_tb)
+            self.__exit__(exc_type, exc_val, exc_tb)
 
     def feed_data(self, data):
         self._buffer.insert(0, data)
