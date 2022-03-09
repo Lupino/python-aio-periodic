@@ -167,7 +167,6 @@ class BaseClient(object):
 
         raise Exception('Not enough msgid avaliable')
 
-
     def agent(self, timeout=10):
         return Agent(self, timeout)
 

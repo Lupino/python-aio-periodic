@@ -32,7 +32,8 @@ class Job(object):
 
     async def sched_later(self, delay, count=0):
         self._check_finished()
-        await self.w.send_command(cmd.SchedLater(self.job_handle, delay, count))
+        await self.w.send_command(cmd.SchedLater(self.job_handle, delay,
+                                                 count))
 
     async def fail(self):
         self._check_finished()
@@ -46,6 +47,7 @@ class Job(object):
 
             self.finished = True
             return False
+
         command = cmd.Acquire(name, count, self.job_handle)
         return self.w.send_command_and_receive(command, parse)
 
