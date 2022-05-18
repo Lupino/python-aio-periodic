@@ -116,7 +116,7 @@ class BaseClient(object):
         return self.connected_evt.is_set()
 
     async def _receive(self, size):
-        while True:
+        while self.connected:
             if len(self._buffer) >= size:
                 buf = self._buffer[:size]
                 self._buffer = self._buffer[size:]
@@ -136,6 +136,7 @@ class BaseClient(object):
             except Exception as e:
                 logger.exception(e)
                 self.connected_evt.clear()
+                self._reader._wakeup_waiter()
             await asyncio.sleep(1)
 
     async def monitor(self):
@@ -143,11 +144,13 @@ class BaseClient(object):
             now = time()
             if self._send_timer + 300 < now:
                 self.connected_evt.clear()
+                self._reader._wakeup_waiter()
 
             if self._receive_timer > self._send_timer:
                 delay = self._receive_timer - self._send_timer
                 if delay > 600:
                     self.connected_evt.clear()
+                    self._reader._wakeup_waiter()
 
             await asyncio.sleep(1)
 
