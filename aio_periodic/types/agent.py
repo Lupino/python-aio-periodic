@@ -6,15 +6,19 @@ import async_timeout
 
 
 class Agent(object):
-    def __init__(self, client, timeout=10):
+    def __init__(self, client, timeout=10, autoid=True):
         self.msgid = None
         self._buffer = []
         self._waiters = []
         self.client = client
         self.timeout = timeout
+        self.autoid = autoid
 
     def __enter__(self):
-        self.msgid = self.client.get_next_msgid()
+        if self.autoid:
+            self.msgid = self.client.get_next_msgid()
+        else:
+            self.msgid = b'\xFF\xFF\xFF\x00'
         self.client.agents[self.msgid] = self
         return self
 

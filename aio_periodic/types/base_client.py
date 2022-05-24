@@ -170,8 +170,8 @@ class BaseClient(object):
 
         raise Exception('Not enough msgid avaliable')
 
-    def agent(self, timeout=10):
-        return Agent(self, timeout)
+    def agent(self, timeout=10, autoid=True):
+        return Agent(self, timeout, autoid)
 
     def get_writer(self):
         return self._writer
@@ -249,7 +249,7 @@ class BaseClient(object):
                 return payload
 
     async def send_command(self, command):
-        async with self.agent(timeout) as agent:
+        async with self.agent(timeout, False) as agent:
             await agent.send(command)
 
     def ping(self, timeout=10):
