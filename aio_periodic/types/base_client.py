@@ -123,11 +123,15 @@ class BaseClient(object):
                 self._buffer = self._buffer[size:]
                 return buf
 
-            buf = await self._reader.read(max(4096, size))
-            if len(buf) == 0:
-                break
+            try:
+                async with timeout(100):
+                    buf = await self._reader.read(max(4096, size))
+                    if len(buf) == 0:
+                        break
 
-            self._buffer += buf
+                    self._buffer += buf
+            except Exception:
+                pass
 
     async def check_alive(self):
         while True:
