@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class GrabAgent(object):
+
     def __init__(self, agent):
         self.agent = agent
         self.sent_timer = 0
@@ -29,6 +30,7 @@ class GrabAgent(object):
 
 
 class Worker(BaseClient):
+
     def __init__(self, enabled_tasks=[]):
         BaseClient.__init__(self, TYPE_WORKER, self._message_callback,
                             self._on_connected)
@@ -198,6 +200,7 @@ class Worker(BaseClient):
              broadcast=False,
              defrsp=DoneResponse(),
              locker=None):
+
         def _func(task):
             self._tasks[func_name] = task
             self.defrsps[func_name] = defrsp
@@ -219,6 +222,7 @@ class Worker(BaseClient):
 
 
 class WorkerCluster(BaseCluster):
+
     def __init__(self, *args, **kwargs):
         BaseCluster.__init__(self, Worker, *args, **kwargs)
 
@@ -226,6 +230,7 @@ class WorkerCluster(BaseCluster):
         self.run_sync('set_enable_tasks', enabled_tasks)
 
     def is_enabled(self, func):
+
         def reduce(acc, a):
             return acc and a
 
@@ -252,7 +257,9 @@ class WorkerCluster(BaseCluster):
              broadcast=False,
              defrsp=DoneResponse(),
              locker=None):
+
         def _func(task):
+
             def reduce(_, call):
                 call(task)
 

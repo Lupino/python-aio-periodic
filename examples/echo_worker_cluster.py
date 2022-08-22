@@ -21,6 +21,7 @@ async def echo_later(job):
 
 @worker.func('test_lock')
 async def test_lock(job):
+
     async def do_lock():
         await asyncio.sleep(1)
         await echo(job)

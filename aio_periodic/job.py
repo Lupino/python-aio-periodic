@@ -9,6 +9,7 @@ class FinishedError(Exception):
 
 
 class Job(object):
+
     def __init__(self, payload, w):
 
         self.payload = J.build(payload)
@@ -40,6 +41,7 @@ class Job(object):
         await self.w.send_command(cmd.WorkFail(self.job_handle))
 
     def acquire(self, name, count):
+
         def parse(payload):
             if payload[0:1] == cmd.ACQUIRED:
                 if payload[1] == 1:

@@ -3,6 +3,7 @@ from .utils import encode_str8, encode_str32, encode_int32, encode_int64, \
 
 
 class Job(object):
+
     def __init__(self,
                  func,
                  name,

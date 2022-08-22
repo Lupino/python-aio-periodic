@@ -23,6 +23,7 @@ def is_success(payload):
 
 
 class BaseClient(object):
+
     def __init__(self, clientType, message_callback=None, on_connected=None):
 
         self.connected_evt = None
@@ -177,6 +178,7 @@ class BaseClient(object):
         return self._writer
 
     async def loop_agent(self):
+
         async def receive():
             magic = await self._receive(4)
             if not magic:
@@ -253,6 +255,7 @@ class BaseClient(object):
             await agent.send(command)
 
     def ping(self, timeout=10):
+
         def is_pong(payload):
             return payload == PONG
 
@@ -302,6 +305,7 @@ class BaseClient(object):
         return self.send_command_and_receive(command, is_success)
 
     def status(self):
+
         def parse(payload):
             payload = str(payload, 'utf-8').strip()
             stats = payload.split('\n')
@@ -333,6 +337,7 @@ class BaseClient(object):
 
 
 class BaseCluster(object):
+
     def __init__(self, clientclass, entrypoints, *args, **kwargs):
         self.clients = []
         nodes = {}
@@ -422,6 +427,7 @@ class BaseCluster(object):
 
     async def status(self):
         '''status from servers and merge the result'''
+
         def reduce(stats, stat):
             for func in stat.keys():
                 if not stats.get(func):

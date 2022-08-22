@@ -6,6 +6,7 @@ import async_timeout
 
 
 class Agent(object):
+
     def __init__(self, client, timeout=10, autoid=True):
         self.msgid = None
         self._buffer = []

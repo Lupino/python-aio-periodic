@@ -2,6 +2,7 @@ from .rsp import DoneResponse
 
 
 class Blueprint(object):
+
     def __init__(self):
         self.tasks = {}
         self.broadcast_tasks = []
@@ -41,6 +42,7 @@ class Blueprint(object):
              broadcast=False,
              defrsp=DoneResponse(),
              locker=None):
+
         def _func(task):
             self.tasks[func_name] = task
             self.defrsps[func_name] = defrsp

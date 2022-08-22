@@ -3,6 +3,7 @@ from time import time
 
 
 class Pool(object):
+
     def __init__(self, init, size, timeout=0):
         self.init = init
         self._sem = asyncio.Semaphore(size)

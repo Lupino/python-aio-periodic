@@ -5,7 +5,7 @@ from time import time
 
 async def main():
     client = Client()
-    await client.connect(open_connection, 'unix:///tmp/periodic.sock')
+    await client.connect(open_connection, 'tcp://54.234.92.38:5000')
 
     job = Job(func='echo', name='test_echo')
     job2 = Job(func='echo',

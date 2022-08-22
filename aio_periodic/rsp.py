@@ -2,6 +2,7 @@ import json as jsonLib
 
 
 class DoneResponse(object):
+
     def __init__(self, buf=b''):
         self.buf = buf
 
@@ -11,6 +12,7 @@ class FailResponse(object):
 
 
 class SchedLaterResponse(object):
+
     def __init__(self, delay, count=0):
         self.delay = delay
         self.count = count
