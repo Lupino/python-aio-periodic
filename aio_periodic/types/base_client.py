@@ -104,7 +104,7 @@ class BaseClient(object):
         self._writer = writer
         self._reader = reader
         self._buffer = b''
-        agent = Agent(self, None)
+        agent = Agent(self)
         await agent.send(self._clientType, True)
         self.connected_evt.set()
         if self._on_connected:
