@@ -204,7 +204,6 @@ class BaseClient(object):
                 payload = await receive()
                 self._receive_timer = time()
                 msgid = payload[0:4]
-                agent = self.agents.get(msgid)
                 payload = payload[4:]
 
                 if payload[0:1] == NO_JOB:
@@ -214,6 +213,7 @@ class BaseClient(object):
                         await self._cb(payload, msgid)
                     continue
 
+                agent = self.agents.get(msgid)
                 if agent:
                     agent.feed_data(payload)
                 else:
@@ -263,7 +263,7 @@ class BaseClient(object):
         def is_pong(payload):
             return payload == PONG
 
-        return self.send_command_and_receive(PING, is_pong)
+        return self.send_command_and_receive(PING, is_pong, timeout=timeout)
 
     def close(self, force=False):
         if self._writer:
