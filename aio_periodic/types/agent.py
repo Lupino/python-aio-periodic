@@ -36,8 +36,12 @@ class Agent(object):
             self.__exit__(exc_type, exc_val, exc_tb)
 
     def feed_data(self, data):
+        waiter_count = len(self._waiters)
+        if len(self._buffer) > waiter_count:
+            self._buffer.pop()
+
         self._buffer.insert(0, data)
-        if len(self._waiters) > 0:
+        if waiter_count > 0:
             waiter = self._waiters.pop()
             waiter.set()
 
