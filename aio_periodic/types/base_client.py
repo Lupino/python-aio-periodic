@@ -44,8 +44,6 @@ class BaseClient(object):
         self._cb = message_callback
         self._initialized = False
         self._send_locker = None
-        self._receive_timer = 0
-        self._send_timer = 0
         self._processes = []
 
         self.prefix = None
@@ -82,8 +80,6 @@ class BaseClient(object):
         task = asyncio.create_task(self.loop_agent())
         self._processes.append(task)
         task = asyncio.create_task(self.check_alive())
-        self._processes.append(task)
-        task = asyncio.create_task(self.monitor())
         self._processes.append(task)
 
     async def connect(self, connector=None, *args):
@@ -144,21 +140,6 @@ class BaseClient(object):
                 self._reader._wakeup_waiter()
             await asyncio.sleep(1)
 
-    async def monitor(self):
-        while True:
-            now = time()
-            if self._send_timer + 300 < now:
-                self.connected_evt.clear()
-                self._reader._wakeup_waiter()
-
-            if self._receive_timer > self._send_timer:
-                delay = self._receive_timer - self._send_timer
-                if delay > 600:
-                    self.connected_evt.clear()
-                    self._reader._wakeup_waiter()
-
-            await asyncio.sleep(1)
-
     def get_next_msgid(self):
         for _ in range(1000000):
             self._last_msgid += 1
@@ -202,7 +183,6 @@ class BaseClient(object):
         async def main_receive_loop():
             while self.connected:
                 payload = await receive()
-                self._receive_timer = time()
                 msgid = payload[0:4]
                 payload = payload[4:]
 

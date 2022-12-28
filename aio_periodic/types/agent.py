@@ -55,7 +55,6 @@ class Agent(object):
         if not force:
             await self.client.connected_wait()
         async with self.client._send_locker:
-            self.client._send_timer = time()
             payload = bytes(cmd)
             if self.msgid:
                 payload = self.msgid + payload
