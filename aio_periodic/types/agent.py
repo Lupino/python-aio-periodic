@@ -1,6 +1,5 @@
 from .utils import MAGIC_REQUEST, encode_int32, to_bytes
 from binascii import crc32
-from time import time
 import asyncio
 import async_timeout
 

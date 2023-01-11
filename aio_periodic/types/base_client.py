@@ -5,7 +5,6 @@ from .command import PING, PONG, NO_JOB, JOB_ASSIGN, SUCCESS
 from . import command as cmd
 from binascii import crc32
 from .job import Job
-from time import time
 from async_timeout import timeout
 
 try:

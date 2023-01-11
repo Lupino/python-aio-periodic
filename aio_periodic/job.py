@@ -1,6 +1,7 @@
 from .types import utils
 from .types.job import Job as J
 from .types import command as cmd
+from .types.base_client import is_success
 import json
 
 
@@ -29,16 +30,18 @@ class Job(object):
 
     async def done(self, buf=b''):
         self._check_finished()
-        await self.w.send_command(cmd.WorkDone(self.job_handle, buf))
+        return await self.w.send_command_and_receive(
+            cmd.WorkDone(self.job_handle, buf), is_success)
 
     async def sched_later(self, delay, count=0):
         self._check_finished()
-        await self.w.send_command(cmd.SchedLater(self.job_handle, delay,
-                                                 count))
+        return await self.w.send_command_and_receive(
+            cmd.SchedLater(self.job_handle, delay, count), is_success)
 
     async def fail(self):
         self._check_finished()
-        await self.w.send_command(cmd.WorkFail(self.job_handle))
+        return await self.w.send_command_and_receive(
+            cmd.WorkFail(self.job_handle), is_success)
 
     def acquire(self, name, count):
 
@@ -54,7 +57,8 @@ class Job(object):
         return self.w.send_command_and_receive(command, parse)
 
     async def release(self, name):
-        await self.w.send_command(cmd.Release(name, self.job_handle))
+        return await self.w.send_command_and_receive(
+            cmd.Release(name, self.job_handle), is_success)
 
     async def with_lock(self, name, count, task, release=False):
         acquired = await self.acquire(name, count)

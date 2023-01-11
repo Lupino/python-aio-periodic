@@ -1,7 +1,7 @@
 from .job import Job
 from .rsp import DoneResponse, FailResponse, SchedLaterResponse
 from .types.utils import TYPE_WORKER
-from .types.base_client import BaseClient, BaseCluster
+from .types.base_client import BaseClient, BaseCluster, is_success
 from .types import command as cmd
 import asyncio
 from asyncio_pool import AioPool
@@ -60,50 +60,67 @@ class Worker(BaseClient):
 
     async def _on_connected(self):
         for func in self._tasks.keys():
-            if func in self._broadcast_tasks:
-                await self._broadcast(func)
-            else:
-                await self._add_func(func)
+            while True:
+                r = False
+                if func in self._broadcast_tasks:
+                    r = await self._broadcast(func)
+                else:
+                    r = await self._add_func(func)
+
+                if r:
+                    break
+
+                await asyncio.sleep(1)
 
         await asyncio.sleep(1)
 
     async def _add_func(self, func):
         if not self.is_enabled(func):
-            return
+            return False
         logger.info(f'Add {func}')
-        await self.send_command(cmd.CanDo(self._add_prefix_subfix(func)))
+        return await self.send_command_and_receive(
+            cmd.CanDo(self._add_prefix_subfix(func)), is_success)
 
     async def add_func(self, func, task, defrsp=DoneResponse(), locker=None):
+        r = False
         if self.connected:
-            await self._add_func(func)
+            r = await self._add_func(func)
 
         self._tasks[func] = task
         self.defrsps[func] = defrsp
         self.lockers[func] = locker
+        return r
 
     async def _broadcast(self, func):
         if not self.is_enabled(func):
-            return
+            return False
         logger.info(f'Broadcast {func}')
-        await self.send_command(cmd.Broadcast(self._add_prefix_subfix(func)))
+        return await self.send_command_and_receive(
+            cmd.Broadcast(self._add_prefix_subfix(func)), is_success)
 
     async def broadcast(self, func, task, defrsp=DoneResponse(), locker=None):
+        r = False
         if self.connected:
-            await self._broadcast(func)
+            r = await self._broadcast(func)
 
         self._tasks[func] = task
         self.defrsps[func] = defrsp
         self.lockers[func] = locker
         self._broadcast_tasks.append(func)
 
+        return r
+
     async def remove_func(self, func):
         logger.info(f'Remove {func}')
-        await self.send_command(cmd.CantDo(self._add_prefix_subfix(func)))
+        r = await self.send_command_and_receive(
+            cmd.CantDo(self._add_prefix_subfix(func)), is_success)
         self._tasks.pop(func, None)
         self.defrsps.pop(func, None)
         self.lockers.pop(func, None)
         if func in self._broadcast_tasks:
             self._broadcast_tasks.remove(func)
+
+        return r
 
     async def next_grab(self):
         if self._pool.is_full:
