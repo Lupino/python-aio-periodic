@@ -23,7 +23,11 @@ def is_success(payload):
 
 class BaseClient(object):
 
-    def __init__(self, clientType, message_callback=None, on_connected=None):
+    def __init__(self,
+                 clientType,
+                 message_callback=None,
+                 on_connected=None,
+                 on_disconnected=None):
 
         self.connected_evt = None
 
@@ -37,6 +41,7 @@ class BaseClient(object):
         self._last_msgid = 0
 
         self._on_connected = on_connected
+        self._on_disconnected = on_disconnected
 
         self._connector = None
         self._connector_args = None
@@ -47,6 +52,12 @@ class BaseClient(object):
 
         self.prefix = None
         self.subfix = None
+
+    def set_on_connected(self, func):
+        self._on_connected = func
+
+    def set_on_disconnected(self, func):
+        self._on_disconnected = func
 
     def set_prefix(self, prefix):
         self.prefix = prefix
@@ -206,6 +217,10 @@ class BaseClient(object):
                 await main_receive_loop()
             except Exception as e:
                 logger.exception(e)
+                if self._on_disconnected:
+                    ret = self._on_disconnected
+                    if asyncio.iscoroutine(ret):
+                        await ret
 
             self.connected_evt.clear()
 
@@ -369,6 +384,12 @@ class BaseCluster(object):
                 retval = reduce(retval, ret)
 
         return retval
+
+    def set_on_connected(self, func):
+        self.run_sync('set_on_connected', func)
+
+    def set_on_disconnected(self, func):
+        self.run_sync('set_on_disconnected', func)
 
     def set_prefix(self, prefix):
         self.run_sync('set_prefix', prefix)
