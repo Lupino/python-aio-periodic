@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aio_periodic"
+version = "0.3.1"
+authors = [
+    {name = "Li Meng Jun", email = "lmjubuntu@gmail.com"},
+]
+description = "The periodic task system client for python3 base on asyncio."
+readme = "README.md"
+requires-python = ">=3.7"
+keywords = ["periodic", "asyncio"]
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    'asyncio',
+    'asyncio-pool'
+]
+
+[tool.setuptools]
+packages = [
+    "aio_periodic",
+    "aio_periodic.types"
+]
