@@ -6,6 +6,7 @@ from . import command as cmd
 from binascii import crc32
 from .job import Job
 from async_timeout import timeout
+from time import time
 
 try:
     from uhashring import HashRing
@@ -52,6 +53,8 @@ class BaseClient(object):
 
         self.prefix = None
         self.subfix = None
+
+        self.ping_at = time()
 
     def set_on_connected(self, func):
         self._on_connected = func
@@ -142,13 +145,16 @@ class BaseClient(object):
     async def check_alive(self):
         while True:
             await self.connected_evt.wait()
+            if self.ping_at > time() - 10:
+                continue
+
             try:
                 await self.ping()
             except Exception as e:
                 logger.exception(e)
                 self.connected_evt.clear()
                 self._reader._wakeup_waiter()
-            await asyncio.sleep(1)
+            await asyncio.sleep(5)
 
     def get_next_msgid(self):
         for _ in range(1000000):
@@ -243,6 +249,7 @@ class BaseClient(object):
         async with self.agent(timeout) as agent:
             await agent.send(command)
             payload = await agent.receive()
+            self.ping_at = time()
             if parse:
                 return parse(payload)
             else:
