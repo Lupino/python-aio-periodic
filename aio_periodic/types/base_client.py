@@ -145,9 +145,11 @@ class BaseClient(object):
     async def check_alive(self):
         while True:
             await self.connected_evt.wait()
+            await asyncio.sleep(5)
+
             now = time()
 
-            if self.ping_at + 10 < now:
+            if self.ping_at + 10 > now:
                 continue
 
             if self.ping_at + 120 < now:
@@ -159,7 +161,6 @@ class BaseClient(object):
                 await self.ping()
             except Exception as e:
                 logger.exception(e)
-            await asyncio.sleep(5)
 
     def get_next_msgid(self):
         for _ in range(1000000):
