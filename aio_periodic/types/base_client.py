@@ -159,8 +159,8 @@ class BaseClient(object):
 
             try:
                 await self.ping()
-            except Exception as e:
-                logger.exception(e)
+            except Exception:
+                pass
 
     def get_next_msgid(self):
         for _ in range(1000000):
@@ -189,10 +189,8 @@ class BaseClient(object):
         async def receive():
             magic = await self._receive(4)
             if not magic:
-                self.close()
                 raise Exception("Closed")
             if magic != MAGIC_RESPONSE:
-                self.close()
                 raise Exception('Magic not match.')
             header = await self._receive(4)
             length = decode_int32(header)
@@ -279,6 +277,9 @@ class BaseClient(object):
         if force:
             for task in self._processes:
                 task.cancel()
+
+        for agent in self.agents.values():
+            agent.feed_data(b'')
 
     def submit_job(self, *args, job=None, **kwargs):
         if job is None:
