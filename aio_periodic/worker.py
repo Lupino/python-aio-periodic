@@ -60,6 +60,9 @@ class Worker(BaseClient):
 
     async def _on_connected(self):
         for func in self._tasks.keys():
+            if not self.is_enabled(func):
+                continue
+
             while True:
                 r = False
                 if func in self._broadcast_tasks:
