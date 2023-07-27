@@ -90,10 +90,15 @@ class BaseClient(object):
         self._send_locker = asyncio.Lock()
         self.msgid_locker = asyncio.Lock()
 
+    def start_processes(self):
         task = asyncio.create_task(self.loop_agent())
         self._processes.append(task)
         task = asyncio.create_task(self.check_alive())
         self._processes.append(task)
+
+    def stop_processes(self):
+        for task in self._processes:
+            task.cancel()
 
     async def connect(self, connector=None, *args):
         if not self._initialized:
@@ -103,23 +108,37 @@ class BaseClient(object):
             self._connector = connector
             self._connector_args = args
 
-        reader, writer = await self._connector(*self._connector_args)
-        if self._writer:
-            try:
-                self._writer.close()
-            except Exception as e:
-                logger.exception(e)
+        self.close()
 
+        reader, writer = await self._connector(*self._connector_args)
         self._writer = writer
         self._reader = reader
         self._buffer = b''
         agent = Agent(self)
         await agent.send(self._clientType, True)
         self.connected_evt.set()
+        self.start_processes()
         if self._on_connected:
             await self._on_connected()
 
         return True
+
+    def start_connect(self):
+
+        async def connect_loop():
+            delay = 1
+            while True:
+                try:
+                    logger.info('reconnecting...')
+                    await self.connect()
+                    logger.info('connected')
+                    break
+                except Exception as e:
+                    logger.error(f'reconnecting failed: {e}')
+
+                await asyncio.sleep(delay)
+
+        asyncio.create_task(connect_loop())
 
     @property
     def connected(self):
@@ -219,35 +238,19 @@ class BaseClient(object):
                 else:
                     logger.error('Agent %s not found.' % msgid)
 
-        while True:
-            await self.connected_evt.wait()
-
-            try:
-                self.connid = await receive()
-                await main_receive_loop()
-            except Exception as e:
-                logger.exception(e)
-                if self._on_disconnected:
+        try:
+            self.connid = await receive()
+            await main_receive_loop()
+        finally:
+            if self._on_disconnected:
+                try:
                     ret = self._on_disconnected
                     if asyncio.iscoroutine(ret):
                         await ret
-
-            self.connected_evt.clear()
-
-            delay = 0
-            while True:
-                try:
-                    await self.connect()
-                    break
                 except Exception as e:
-                    logger.exception(e)
+                    logger.error(f'processing on_disconnected error: {e}')
 
-                delay += 2
-
-                if delay > 30:
-                    delay = 30
-
-                await asyncio.sleep(delay)
+            self.start_connect()
 
     async def send_command_and_receive(self, command, parse=None, timeout=10):
         async with self.agent(timeout) as agent:
@@ -270,13 +273,11 @@ class BaseClient(object):
 
         return self.send_command_and_receive(PING, is_pong, timeout=timeout)
 
-    def close(self, force=False):
+    def close(self):
         if self._writer:
             self._writer.close()
 
-        if force:
-            for task in self._processes:
-                task.cancel()
+        self.stop_processes()
 
         for agent in self.agents.values():
             agent.feed_data(b'')
