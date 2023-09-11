@@ -1,4 +1,4 @@
-import json as jsonLib
+import json
 
 
 class DoneResponse(object):
@@ -22,8 +22,8 @@ def done(buf=b''):
     return DoneResponse(buf)
 
 
-def json(data):
-    return DoneResponse(bytes(jsonLib.dumps(data), 'utf-8'))
+def jsonify(data):
+    return DoneResponse(bytes(json.dumps(data), 'utf-8'))
 
 
 def fail():
