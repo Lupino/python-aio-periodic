@@ -84,7 +84,7 @@ class Worker(BaseClient):
         return await self.send_command_and_receive(
             cmd.CanDo(self._add_prefix_subfix(func)), is_success)
 
-    async def add_func(self, func, task, defrsp=DoneResponse(), locker=None):
+    async def add_func(self, func, task, defrsp=FailResponse(), locker=None):
         r = False
         if self.connected:
             r = await self._add_func(func)
@@ -101,7 +101,7 @@ class Worker(BaseClient):
         return await self.send_command_and_receive(
             cmd.Broadcast(self._add_prefix_subfix(func)), is_success)
 
-    async def broadcast(self, func, task, defrsp=DoneResponse(), locker=None):
+    async def broadcast(self, func, task, defrsp=FailResponse(), locker=None):
         r = False
         if self.connected:
             r = await self._broadcast(func)
@@ -218,7 +218,7 @@ class Worker(BaseClient):
     def func(self,
              func_name,
              broadcast=False,
-             defrsp=DoneResponse(),
+             defrsp=FailResponse(),
              locker=None):
 
         def _func(task):
@@ -259,10 +259,10 @@ class WorkerCluster(BaseCluster):
                              reduce=reduce,
                              initialize=True)
 
-    async def add_func(self, func, task, defrsp=DoneResponse(), locker=None):
+    async def add_func(self, func, task, defrsp=FailResponse(), locker=None):
         await self.run('add_func', func, task, defrsp, locker)
 
-    async def broadcast(self, func, task, defrsp=DoneResponse(), locker=None):
+    async def broadcast(self, func, task, defrsp=FailResponse(), locker=None):
         await self.run('broadcast', func, task, defrsp, locker)
 
     async def remove_func(self, func):
@@ -275,7 +275,7 @@ class WorkerCluster(BaseCluster):
     def func(self,
              func_name,
              broadcast=False,
-             defrsp=DoneResponse(),
+             defrsp=FailResponse(),
              locker=None):
 
         def _func(task):
