@@ -36,7 +36,7 @@ class Job(object):
 
         self.finished = True
 
-    async def done(self, buf: bytes = b'') -> bool:
+    async def done(self, buf: Any = None) -> bool:
         self._check_finished()
         return cast(
             bool, await

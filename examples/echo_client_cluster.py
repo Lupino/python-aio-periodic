@@ -1,11 +1,15 @@
-from aio_periodic import open_connection, Job, ClientCluster
+from aio_periodic import Transport, Job, ClientCluster
 import asyncio
 from time import time
 
 
-async def main():
-    client = ClientCluster(['tcp://:5000', 'tcp://:5001'])
-    await client.connect(open_connection)
+async def main() -> None:
+    hosts = ['tcp://:5000', 'tcp://:5001']
+    transports = {}
+    for host in hosts:
+        transports[host] = Transport(host)
+    client = ClientCluster(hosts)
+    await client.connect(transports)
 
     job = Job(func='echo', name='test_echo')
     job2 = Job(func='echo',

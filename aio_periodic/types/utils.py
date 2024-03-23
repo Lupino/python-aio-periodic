@@ -18,6 +18,8 @@ def to_bytes(s: Any) -> bytes:
         return bytes(s, 'utf-8')
     elif isinstance(s, dict) or isinstance(s, list):
         return bytes(json.dumps(s), 'utf-8')
+    elif s is None:
+        return b''
     else:
         return bytes(str(s), 'utf-8')
 
@@ -29,6 +31,8 @@ def to_str(s: Any) -> str:
         return s
     elif isinstance(s, dict) or isinstance(s, list):
         return json.dumps(s)
+    elif s is None:
+        return ''
     else:
         return str(s)
 

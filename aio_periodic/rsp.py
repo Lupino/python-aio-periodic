@@ -3,9 +3,9 @@ from typing import Any
 
 
 class DoneResponse(object):
-    buf: bytes
+    buf: Any
 
-    def __init__(self, buf: bytes = b'') -> None:
+    def __init__(self, buf: Any = None) -> None:
         self.buf = buf
 
 
@@ -22,7 +22,7 @@ class SchedLaterResponse(object):
         self.count = count
 
 
-def done(buf: bytes = b'') -> DoneResponse:
+def done(buf: Any = None) -> DoneResponse:
     return DoneResponse(buf)
 
 

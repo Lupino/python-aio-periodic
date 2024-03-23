@@ -6,6 +6,7 @@ from .command import PING, PONG, NO_JOB, JOB_ASSIGN, SUCCESS, Command
 from . import command as cmd
 from binascii import crc32
 from .job import Job
+from ..transport import Transport
 from async_timeout import timeout
 from time import time
 from typing import Optional, Dict, List, Any, Callable, Coroutine, cast
@@ -40,15 +41,7 @@ class BaseClient(object):
     _processes: List[asyncio.Task[Any]]
     prefix: str
     subfix: str
-    _connector: Callable[
-        [VarArg(Any)],
-        Coroutine[
-            Any,
-            Any,
-            tuple[StreamReader, StreamWriter],
-        ],
-    ]
-    _connector_args: Any
+    transport: Transport
 
     def __init__(
         self,
@@ -81,8 +74,6 @@ class BaseClient(object):
         self._on_connected = on_connected
         self._on_disconnected = on_disconnected
 
-        # self._connector = None
-        # self._connector_args = None
         self._cb = message_callback
         self._initialized = False
         # self._send_locker = None
@@ -139,26 +130,18 @@ class BaseClient(object):
         for task in self._processes:
             task.cancel()
 
-    async def connect(self,
-                      connector: Optional[Callable[
-                          [VarArg(Any)],
-                          Coroutine[
-                              Any,
-                              Any,
-                              tuple[StreamReader, StreamWriter],
-                          ],
-                      ]] = None,
-                      *args: Any) -> bool:
+    async def connect(self, transport: Optional[Transport] = None) -> bool:
         if self._initialized:
             self.close()
         else:
+            if not transport:
+                raise Exception('connect required transport')
             self.initialize()
 
-        if connector:
-            self._connector = connector
-            self._connector_args = args
+        if transport:
+            self.transport = transport
 
-        reader, writer = await self._connector(*self._connector_args)
+        reader, writer = await self.transport.get()
         self._writer = writer
         self._reader = reader
         self._buffer = b''
@@ -494,19 +477,14 @@ class BaseCluster(object):
     def set_subfix(self, subfix: str) -> None:
         self.run_sync('set_subfix', subfix)
 
-    async def connect(self,
-                      connector: Optional[Callable[
-                          [VarArg(Any)],
-                          Coroutine[
-                              Any,
-                              Any,
-                              tuple[StreamReader, StreamWriter],
-                          ],
-                      ]] = None,
-                      *args: Any) -> None:
+    async def connect(self, transports: Dict[str, Transport]) -> None:
         '''connect to servers'''
         for entrypoint, client in zip(self.entrypoints, self.clients):
-            await client.connect(connector, entrypoint, *args)
+            transport = transports.get(entrypoint)
+            if not transport:
+                raise Exception('no transport ' + entrypoint)
+
+            await client.connect(transport)
 
     def close(self) -> None:
         '''close all the servers'''

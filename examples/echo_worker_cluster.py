@@ -1,17 +1,19 @@
-from aio_periodic import open_connection, WorkerCluster
+from aio_periodic import Transport, WorkerCluster
+from aio_periodic.job import Job
 import asyncio
 
-worker = WorkerCluster(['tcp://:5000', 'tcp://:5001'])
+hosts = ['tcp://:5000', 'tcp://:5001']
+worker = WorkerCluster()
 
 
 @worker.func('echo')
-async def echo(job):
+async def echo(job: Job) -> None:
     print(job.name)
     await job.done(job.name)
 
 
 @worker.func('echo_later')
-async def echo_later(job):
+async def echo_later(job: Job) -> None:
     print(job.name, job.payload.count)
     if job.payload.count > 3:
         await job.done(job.name)
@@ -20,18 +22,21 @@ async def echo_later(job):
 
 
 @worker.func('test_lock')
-async def test_lock(job):
+async def test_lock(job: Job) -> None:
 
-    async def do_lock():
+    async def do_lock() -> None:
         await asyncio.sleep(1)
         await echo(job)
 
     await job.with_lock('test', 2, do_lock)
 
 
-async def main():
-    await worker.connect(open_connection)
-    worker.work(10)
+async def main() -> None:
+    transports = {}
+    for host in hosts:
+        transports[host] = Transport(host)
+    await worker.connect(transports)
+    await worker.work(10)
 
 
 asyncio.run(main())

@@ -1,11 +1,11 @@
-from aio_periodic import open_connection, Client, Job
+from aio_periodic import Transport, Client, Job
 import asyncio
 from time import time
 
 
-async def main():
+async def main() -> None:
     client = Client()
-    await client.connect(open_connection, 'unix:///tmp/periodic.sock')
+    await client.connect(Transport('unix:///tmp/periodic.sock'))
 
     job = Job(func='echo', name='test_echo')
     job2 = Job(func='echo',

@@ -77,8 +77,8 @@ class SchedLater(Command):
 
 class WorkDone(Command):
 
-    def __init__(self, job_handle: bytes, buf: bytes = b'') -> None:
-        Command.__init__(self, [WORK_DONE, job_handle, buf])
+    def __init__(self, job_handle: bytes, buf: Any = None) -> None:
+        Command.__init__(self, [WORK_DONE, job_handle, utils.to_bytes(buf)])
 
 
 class WorkFail(Command):
