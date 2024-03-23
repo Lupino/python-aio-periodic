@@ -18,7 +18,8 @@ classifiers = [
 ]
 dependencies = [
     'asyncio',
-    'asyncio-pool'
+    'asyncio-pool',
+    'mypy_extensions'
 ]
 
 [tool.setuptools]

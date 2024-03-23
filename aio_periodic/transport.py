@@ -1,10 +1,12 @@
 import asyncio
 import logging
+from asyncio import StreamReader, StreamWriter
 
 logger = logging.getLogger('aio_periodic.transport')
 
 
-async def open_connection(entrypoint):
+async def open_connection(
+        entrypoint: str) -> tuple[StreamReader, StreamWriter]:
     logger.info("open connection: " + entrypoint)
     if entrypoint.startswith('unix://'):
         return await asyncio.open_unix_connection(entrypoint.split('://')[1])

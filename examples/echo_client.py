@@ -5,7 +5,7 @@ from time import time
 
 async def main():
     client = Client()
-    await client.connect(open_connection, 'tcp://54.234.92.38:5000')
+    await client.connect(open_connection, 'unix:///tmp/periodic.sock')
 
     job = Job(func='echo', name='test_echo')
     job2 = Job(func='echo',
@@ -36,7 +36,11 @@ async def main():
 
     for i in range(0, 100):
         job6 = Job(func='test_lock', name='test_lock_' + str(i))
+        print(job6)
         await client.submit_job(job=job6)
+
+    print('done')
+    client.close()
 
 
 asyncio.run(main())
