@@ -158,12 +158,13 @@ class BaseClient(object):
 
         async def connect_loop() -> None:
             delay = 1
-            while True:
+            noconnected = True
+            while noconnected:
                 try:
                     logger.info('reconnecting...')
                     await self.connect()
                     logger.info('connected')
-                    break
+                    noconnected = False
                 except Exception as e:
                     logger.error(f'reconnecting failed: {e}')
 
@@ -182,15 +183,19 @@ class BaseClient(object):
                 self._buffer = self._buffer[size:]
                 return buf
 
+            is_recv_empty = False
             try:
                 async with timeout(100):
                     buf = await self._reader.read(max(4096, size))
                     if len(buf) == 0:
-                        break
+                        is_recv_empty = True
 
                     self._buffer += buf
             except Exception:
                 pass
+
+            if is_recv_empty:
+                break
 
         return b''
 
