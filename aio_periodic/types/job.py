@@ -15,7 +15,7 @@ class Job(object):
     def __init__(self,
                  func: Any,
                  name: Any,
-                 workload: bytes = b'',
+                 workload: Any = b'',
                  sched_at: int = 0,
                  count: int = 0,
                  timeout: int = 0):
