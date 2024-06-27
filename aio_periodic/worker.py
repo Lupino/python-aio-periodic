@@ -240,18 +240,14 @@ class Worker(BaseClient):
             ret = self.defrsps.get(job.func_name, FailResponse())
 
         if not job.finished:
-            if isinstance(ret, str):
-                await job.done(bytes(ret, 'utf-8'))
-            elif isinstance(ret, bytes):
-                await job.done(ret)
-            elif isinstance(ret, DoneResponse):
+            if isinstance(ret, DoneResponse):
                 await job.done(ret.buf)
             elif isinstance(ret, FailResponse):
                 await job.fail()
             elif isinstance(ret, SchedLaterResponse):
                 await job.sched_later(ret.delay, ret.count)
             else:
-                await job.done()
+                await job.done(ret)
 
     # decorator
     def func(
