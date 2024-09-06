@@ -14,7 +14,7 @@ from typing import Optional, Dict, List, Any, Callable, Coroutine, cast, \
 from mypy_extensions import KwArg, VarArg
 
 try:
-    from uhashring import HashRing
+    from uhashring import HashRing  # type: ignore
 except Exception:
     HashRing = None
 
@@ -348,6 +348,7 @@ class BaseClient(object):
                       *args: Any,
                       job: Optional[Job] = None,
                       stream: Optional[Callable[[bytes], None]] = None,
+                      stream_wait: Optional[float] = None,
                       **kwargs: Any) -> bytes:
         if job is None:
             job = Job(*args, **kwargs)
@@ -382,6 +383,9 @@ class BaseClient(object):
         ret = await self.send_command_and_receive(rj, parse, timeout)
 
         if task:
+            if stream_wait is not None:
+                await asyncio.sleep(stream_wait)
+
             task.cancel()
 
         return cast(bytes, ret)
@@ -544,12 +548,17 @@ class BaseCluster(object):
                       *args: Any,
                       job: Optional[Job] = None,
                       stream: Optional[Callable[[bytes], None]] = None,
+                      stream_wait: Optional[float] = None,
                       **kwargs: Any) -> bytes:
         '''run job to one server'''
         if job is None:
             job = Job(*args, **kwargs)
         client = self.get(job.name)
-        return await client.run_job(job=job, stream=stream)
+        return await client.run_job(
+            job=job,
+            stream=stream,
+            stream_wait=stream_wait,
+        )
 
     async def recv_job_data(
         self,
