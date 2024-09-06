@@ -347,11 +347,10 @@ class BaseClient(object):
     async def run_job(self,
                       *args: Any,
                       job: Optional[Job] = None,
+                      stream: Optional[Callable[[bytes], None]] = None,
                       **kwargs: Any) -> bytes:
         if job is None:
             job = Job(*args, **kwargs)
-
-        job.func = self._add_prefix_subfix(job.func)
 
         if job.timeout == 0:
             job.timeout = 10
@@ -367,9 +366,25 @@ class BaseClient(object):
 
             return payload
 
-        return cast(
-            bytes, await self.send_command_and_receive(cmd.RunJob(job), parse,
-                                                       timeout))
+        task = None
+        if stream is not None:
+            func = job.func[:]
+            name = job.name[:]
+
+            async def do_task() -> None:
+                async for data in self.recv_job_data(func, name, timeout):
+                    stream(data)
+
+            task = asyncio.create_task(do_task())
+
+        job.func = self._add_prefix_subfix(job.func)
+        rj = cmd.RunJob(job)
+        ret = await self.send_command_and_receive(rj, parse, timeout)
+
+        if task:
+            task.cancel()
+
+        return cast(bytes, ret)
 
     async def remove_job(self, func: str, name: Any) -> bool:
         func = self._add_prefix_subfix(func)
@@ -414,6 +429,8 @@ class BaseClient(object):
         timeout: int = 120,
     ) -> AsyncIterable[bytes]:
         job = Job(func, name)
+        job.func = self._add_prefix_subfix(job.func)
+
         async with self.agent(timeout) as agent:
             await agent.send(cmd.RecvData(job))
             while True:
@@ -526,12 +543,13 @@ class BaseCluster(object):
     async def run_job(self,
                       *args: Any,
                       job: Optional[Job] = None,
+                      stream: Optional[Callable[[bytes], None]] = None,
                       **kwargs: Any) -> bytes:
         '''run job to one server'''
         if job is None:
             job = Job(*args, **kwargs)
         client = self.get(job.name)
-        return await client.run_job(job=job)
+        return await client.run_job(job=job, stream=stream)
 
     async def recv_job_data(
         self,
