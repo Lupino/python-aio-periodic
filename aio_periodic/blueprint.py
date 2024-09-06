@@ -1,5 +1,5 @@
 from .rsp import DoneResponse, FailResponse, SchedLaterResponse
-from typing import Optional, List, Dict, Any, TYPE_CHECKING, Optional, Callable, \
+from typing import Optional, List, Dict, Any, TYPE_CHECKING, Callable, \
     Coroutine
 
 from .job import Job

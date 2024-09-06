@@ -9,7 +9,8 @@ from .job import Job
 from ..transport import Transport
 from async_timeout import timeout
 from time import time
-from typing import Optional, Dict, List, Any, Callable, Coroutine, cast
+from typing import Optional, Dict, List, Any, Callable, Coroutine, cast, \
+    AsyncIterable
 from mypy_extensions import KwArg, VarArg
 
 try:
@@ -406,6 +407,23 @@ class BaseClient(object):
             bool, await self.send_command_and_receive(cmd.DropFunc(func),
                                                       is_success))
 
+    async def recv_job_data(
+        self,
+        func: str,
+        name: str,
+        timeout: int = 120,
+    ) -> AsyncIterable[bytes]:
+        job = Job(func, name)
+        async with self.agent(timeout) as agent:
+            await agent.send(cmd.RecvData(job))
+            while True:
+                payload = await agent.receive()
+                if payload[0] == cmd.NO_WORKER[0]:
+                    raise Exception('no worker')
+
+                if payload[0] == cmd.DATA[0]:
+                    yield payload[1:]
+
     async def connected_wait(self) -> None:
         await self.connected_evt.wait()
 
@@ -514,6 +532,17 @@ class BaseCluster(object):
             job = Job(*args, **kwargs)
         client = self.get(job.name)
         return await client.run_job(job=job)
+
+    async def recv_job_data(
+        self,
+        func: str,
+        name: str,
+        timeout: int = 120,
+    ) -> AsyncIterable[bytes]:
+        '''recv job from one server'''
+        client = self.get(name)
+        async for v in client.recv_job_data(func, name, timeout):
+            yield v
 
     async def remove_job(self, func: str, name: str) -> bool:
         '''remove job from servers'''

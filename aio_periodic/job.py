@@ -43,6 +43,13 @@ class Job(object):
             self.w.send_command_and_receive(cmd.WorkDone(self.job_handle, buf),
                                             is_success))
 
+    async def data(self, buf: Any = None) -> bool:
+        self._check_finished()
+        return cast(
+            bool, await
+            self.w.send_command_and_receive(cmd.WorkData(self.job_handle, buf),
+                                            is_success))
+
     async def sched_later(self, delay: int, count: int = 0) -> bool:
         self._check_finished()
         return cast(
