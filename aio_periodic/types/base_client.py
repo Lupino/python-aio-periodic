@@ -348,7 +348,6 @@ class BaseClient(object):
                       *args: Any,
                       job: Optional[Job] = None,
                       stream: Optional[Callable[[bytes], None]] = None,
-                      stream_wait: Optional[float] = None,
                       **kwargs: Any) -> bytes:
         if job is None:
             job = Job(*args, **kwargs)
@@ -383,10 +382,7 @@ class BaseClient(object):
         ret = await self.send_command_and_receive(rj, parse, timeout)
 
         if task:
-            if stream_wait is not None:
-                await asyncio.sleep(stream_wait)
-
-            task.cancel()
+            await task
 
         return cast(bytes, ret)
 
@@ -443,7 +439,11 @@ class BaseClient(object):
                     raise Exception('no worker')
 
                 if payload[0] == cmd.DATA[0]:
-                    yield payload[1:]
+                    payload = payload[1:]
+                    if payload == b'EOF':
+                        break
+
+                    yield payload
 
     async def connected_wait(self) -> None:
         await self.connected_evt.wait()
@@ -548,7 +548,6 @@ class BaseCluster(object):
                       *args: Any,
                       job: Optional[Job] = None,
                       stream: Optional[Callable[[bytes], None]] = None,
-                      stream_wait: Optional[float] = None,
                       **kwargs: Any) -> bytes:
         '''run job to one server'''
         if job is None:
@@ -557,7 +556,6 @@ class BaseCluster(object):
         return await client.run_job(
             job=job,
             stream=stream,
-            stream_wait=stream_wait,
         )
 
     async def recv_job_data(
