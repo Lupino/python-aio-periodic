@@ -347,7 +347,10 @@ class BaseClient(object):
     async def run_job(self,
                       *args: Any,
                       job: Optional[Job] = None,
-                      stream: Optional[Callable[[bytes], None]] = None,
+                      stream: Optional[Callable[[bytes], None]
+                                       | Callable[[bytes],
+                                                  Coroutine[Any, Any,
+                                                            Any]]] = None,
                       **kwargs: Any) -> bytes:
         if job is None:
             job = Job(*args, **kwargs)
@@ -373,7 +376,9 @@ class BaseClient(object):
 
             async def do_task() -> None:
                 async for data in self.recv_job_data(func, name, timeout):
-                    stream(data)
+                    ret = stream(data)
+                    if asyncio.iscoroutine(ret):
+                        await ret
 
             task = asyncio.create_task(do_task())
 
@@ -547,7 +552,10 @@ class BaseCluster(object):
     async def run_job(self,
                       *args: Any,
                       job: Optional[Job] = None,
-                      stream: Optional[Callable[[bytes], None]] = None,
+                      stream: Optional[Callable[[bytes], None]
+                                       | Callable[[bytes],
+                                                  Coroutine[Any, Any,
+                                                            Any]]] = None,
                       **kwargs: Any) -> bytes:
         '''run job to one server'''
         if job is None:
