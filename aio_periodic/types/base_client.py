@@ -374,13 +374,17 @@ class BaseClient(object):
             func = job.func[:]
             name = job.name[:]
 
+            fut: asyncio.Future[bool] = asyncio.Future()
+
             async def do_task() -> None:
-                async for data in self.recv_job_data(func, name, timeout):
+                async for data in self.recv_job_data(func, name, timeout, fut):
                     ret = stream(data)
                     if asyncio.iscoroutine(ret):
                         await ret
 
             task = asyncio.create_task(do_task())
+
+            await fut
 
         job.func = self._add_prefix_subfix(job.func)
         rj = cmd.RunJob(job)
@@ -432,6 +436,7 @@ class BaseClient(object):
         func: str,
         name: str,
         timeout: int = 120,
+        fut: Optional[asyncio.Future[bool]] = None,
     ) -> AsyncIterable[bytes]:
         job = Job(func, name)
         job.func = self._add_prefix_subfix(job.func)
@@ -449,6 +454,10 @@ class BaseClient(object):
                         break
 
                     yield payload
+
+                if payload[0] == cmd.SUCCESS[0]:
+                    if fut:
+                        fut.set_result(True)
 
     async def connected_wait(self) -> None:
         await self.connected_evt.wait()
@@ -571,10 +580,11 @@ class BaseCluster(object):
         func: str,
         name: str,
         timeout: int = 120,
+        fut: Optional[asyncio.Future[bool]] = None,
     ) -> AsyncIterable[bytes]:
         '''recv job from one server'''
         client = self.get(name)
-        async for v in client.recv_job_data(func, name, timeout):
+        async for v in client.recv_job_data(func, name, timeout, fut):
             yield v
 
     async def remove_job(self, func: str, name: str) -> bool:
