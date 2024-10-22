@@ -285,7 +285,7 @@ class BaseClient(object):
         finally:
             if self._on_disconnected:
                 try:
-                    ret = self._on_disconnected
+                    ret = self._on_disconnected()
                     if asyncio.iscoroutine(ret):
                         await ret
                 except Exception as e:
