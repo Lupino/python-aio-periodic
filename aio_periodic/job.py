@@ -30,11 +30,12 @@ class Job(object):
 
         self.finished = False
 
-    def _check_finished(self) -> None:
+    def _check_finished(self, auto_finished: bool = True) -> None:
         if self.finished:
             raise FinishedError('Job is already finished')
 
-        self.finished = True
+        if auto_finished:
+            self.finished = True
 
     async def done(self, buf: Any = None) -> bool:
         self._check_finished()
@@ -44,7 +45,7 @@ class Job(object):
                                             is_success))
 
     async def data(self, buf: Any = None) -> bool:
-        self._check_finished()
+        self._check_finished(False)
         return cast(
             bool, await
             self.w.send_command_and_receive(cmd.WorkData(self.job_handle, buf),
