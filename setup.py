@@ -5,7 +5,7 @@ except ImportError:
 
 packages = ['aio_periodic', 'aio_periodic.types']
 
-requires = ['asyncio', 'asyncio-pool', 'mypy_extensions']
+requires = ['asyncio', 'asyncio-pool', 'mypy-extensions']
 
 setup(
     name='aio_periodic',

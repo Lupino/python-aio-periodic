@@ -1,5 +1,5 @@
 import asyncio
-from asyncio import StreamReader, StreamWriter
+from asyncio import StreamReader, StreamWriter, timeout
 from .agent import Agent
 from .utils import decode_int32, MAGIC_RESPONSE, encode_int32
 from .command import PING, PONG, NO_JOB, JOB_ASSIGN, SUCCESS, Command
@@ -7,7 +7,6 @@ from . import command as cmd
 from binascii import crc32
 from .job import Job
 from ..transport import Transport
-from async_timeout import timeout
 from time import time
 from typing import Optional, Dict, List, Any, Callable, Coroutine, cast, \
     AsyncIterable

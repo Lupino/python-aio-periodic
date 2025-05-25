@@ -1,7 +1,6 @@
 from .utils import MAGIC_REQUEST, encode_int32, to_bytes
 from binascii import crc32
 import asyncio
-import async_timeout
 from typing import List, Any, TYPE_CHECKING
 from .command import Command
 
@@ -60,7 +59,7 @@ class Agent(object):
             waiter.set()
 
     async def receive(self) -> bytes:
-        async with async_timeout.timeout(self.timeout):
+        async with asyncio.timeout(self.timeout):
             if len(self._buffer) == 0:
                 waiter = self._make_waiter()
                 await waiter.wait()
