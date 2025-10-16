@@ -88,12 +88,16 @@ class Job(object):
                         name: str,
                         count: int,
                         task: Callable[[], Coroutine[Any, Any, Any]],
-                        release: bool = False) -> None:
+                        release: bool = False) -> Any:
         acquired = await self.acquire(name, count)
         if acquired:
-            await task()
-            if release:
-                await self.release(name)
+            try:
+                return await task()
+            finally:
+                if release:
+                    await self.release(name)
+
+        return None
 
     @property
     def func_name(self) -> str:
