@@ -6,7 +6,7 @@ from .command import PING, PONG, NO_JOB, JOB_ASSIGN, SUCCESS, Command
 from . import command as cmd
 from binascii import crc32
 from .job import Job
-from ..transport import Transport
+from ..transport import BaseTransport
 from time import time
 from typing import Optional, Dict, List, Any, Callable, Coroutine, cast, \
     AsyncIterable
@@ -41,7 +41,7 @@ class BaseClient(object):
     _processes: List[asyncio.Task[Any]]
     prefix: str
     subfix: str
-    transport: Transport
+    transport: BaseTransport
 
     def __init__(
         self,
@@ -130,7 +130,7 @@ class BaseClient(object):
         for task in self._processes:
             task.cancel()
 
-    async def connect(self, transport: Optional[Transport] = None) -> bool:
+    async def connect(self, transport: Optional[BaseTransport] = None) -> bool:
         if self._initialized:
             self.close()
         else:
@@ -534,7 +534,7 @@ class BaseCluster(object):
     def set_subfix(self, subfix: str) -> None:
         self.run_sync('set_subfix', subfix)
 
-    async def connect(self, transports: Dict[str, Transport]) -> None:
+    async def connect(self, transports: Dict[str, BaseTransport]) -> None:
         '''connect to servers'''
         for entrypoint, client in zip(self.entrypoints, self.clients):
             transport = transports.get(entrypoint)

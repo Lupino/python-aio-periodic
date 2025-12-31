@@ -26,7 +26,14 @@ class RSAMode(IntEnum):
     RSA = 1
     AES = 2
 
-class Transport:
+
+
+class BaseTransport(object):
+    async def get(self) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        raise NotImplementedError('you must rewrite at sub class')
+
+
+class Transport(BaseTransport):
     def __init__(self, entrypoint: str) -> None:
         self.entrypoint = entrypoint
 
@@ -48,7 +55,7 @@ class Transport:
             logger.error(f"Connection error: {e}")
             raise
 
-class SecureStreamReader:
+class SecureStreamReader(asyncio.StreamReader):
     """
     Unified Reader that handles Plain, RSA, or AES decryption based on negotiated mode.
     Matches Haskell recvData logic.
@@ -108,7 +115,7 @@ class SecureStreamReader:
         decryptor = cipher.decryptor()
         return decryptor.update(ciphertext) + decryptor.finalize()
 
-class SecureStreamWriter:
+class SecureStreamWriter(asyncio.StreamWriter):
     """
     Unified Writer that handles Plain, RSA, or AES encryption based on negotiated mode.
     Matches Haskell sendData logic.
@@ -180,7 +187,7 @@ class SecureStreamWriter:
     async def wait_closed(self) -> None:
         await self.writer.wait_closed()
 
-class RSATransport:
+class RSATransport(BaseTransport):
     """
     Transport layer handling key loading, handshake, mode negotiation, and session setup.
     """
