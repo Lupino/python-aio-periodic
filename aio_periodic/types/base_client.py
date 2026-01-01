@@ -191,8 +191,11 @@ class BaseClient(object):
                         is_recv_empty = True
 
                     self._buffer += buf
-            except Exception:
+
+            except TimeoutError:
                 pass
+            except Exception:
+                break
 
             if is_recv_empty:
                 break
