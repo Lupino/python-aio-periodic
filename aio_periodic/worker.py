@@ -34,6 +34,9 @@ class GrabAgent(object):
     def is_timeout(self) -> bool:
         return self.sent_timer + 5 < int(time())
 
+    async def send_assigned(self) -> None:
+        await self.agent.send(cmd.JobAssigned())
+
 
 class Worker(BaseClient):
     _tasks: Dict[str, Callable[[Job], Coroutine[Any, Any, Any]]
@@ -191,13 +194,14 @@ class Worker(BaseClient):
         self._pool.spawn_n(self.run_task(payload, msgid))
 
     async def run_task(self, payload: bytes, msgid: bytes) -> None:
+        agent = self.grab_agents[msgid]
         try:
+            await agent.send_assigned()
             job = Job(payload[1:], self)
             await self.process_job(job)
         except asyncio.exceptions.CancelledError:
             pass
         finally:
-            agent = self.grab_agents[msgid]
             await agent.safe_send()
 
     async def process_job(self, job: Job) -> None:

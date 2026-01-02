@@ -1,11 +1,13 @@
-from aio_periodic import Transport, Client, Job
+from aio_periodic import Transport, Client, Job, RSATransport, RSAMode
 import asyncio
 from time import time
 
 
 async def main() -> None:
     client = Client()
-    await client.connect(Transport('unix:///tmp/periodic.sock'))
+    tp = Transport('unix:///tmp/periodic.sock')
+    # rsa_tp = RSATransport(tp, 'private_key.pem', 'server_public_key.pem')
+    await client.connect(tp)
 
     job = Job(func='echo', name='test_echo')
     job2 = Job(func='echo',

@@ -1,4 +1,4 @@
-from aio_periodic import Transport, Worker
+from aio_periodic import Transport, Worker, RSATransport
 from aio_periodic.job import Job
 from aio_periodic.types.utils import to_bytes
 import asyncio
@@ -28,7 +28,9 @@ async def test_lock(job: Job) -> None:
 
 async def main() -> None:
     worker = Worker([])
-    await worker.connect(Transport('unix:///tmp/periodic.sock'))
+    tp = Transport('unix:///tmp/periodic.sock')
+    # rsa_tp = RSATransport(tp, 'private_key.pem', 'server_public_key.pem')
+    await worker.connect(tp)
 
     await worker.add_func('echo', echo)
     await worker.add_func('echo_later', echo_later)

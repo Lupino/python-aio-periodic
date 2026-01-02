@@ -63,6 +63,8 @@ DATA = b'\x1E'
 RECV_DATA = b'\x1F'
 # 0x20 WC.WorkData
 WORK_DATA = b'\x20'
+# 0x20 WC.JobAssigned
+JOB_ASSIGNED = b'\x21'
 
 
 class Command(object):
@@ -192,3 +194,9 @@ class WorkData(Command):
 
     def __init__(self, job_handle: bytes, buf: Any = None) -> None:
         Command.__init__(self, [WORK_DATA, job_handle, utils.to_bytes(buf)])
+
+
+class JobAssigned(Command):
+
+    def __init__(self) -> None:
+        Command.__init__(self, JOB_ASSIGNED)
