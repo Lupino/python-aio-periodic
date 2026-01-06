@@ -1,6 +1,8 @@
+from typing import Any, Union, List
 from . import utils
 from .job import Job
-from typing import Any
+
+# --- Constants ---
 
 # 0x00 SC.Noop
 NOOP = b'\x00'
@@ -20,8 +22,7 @@ NO_JOB = b'\x06'
 CAN_DO = b'\x07'
 # 0x08 WC.CantDo
 CANT_DO = b'\x08'
-# 0x09 WC.Ping
-# 0x09 CC.Ping
+# 0x09 WC.Ping / CC.Ping
 PING = b'\x09'
 # 0x0A SC.Pong
 PONG = b'\x0A'
@@ -39,14 +40,14 @@ DROP_FUNC = b'\x0F'
 SUCCESS = b'\x10'
 # 0x11 CC.RemoveJob
 REMOVE_JOB = b'\x11'
-# 0x12 CC.Dump
-# 0x13 CC.Load
-# 0x14 CC.Shutdown
+# 0x12 CC.Dump (Reserved)
+# 0x13 CC.Load (Reserved)
+# 0x14 CC.Shutdown (Reserved)
 # 0x15 WC.Broadcast
 BROADCAST = b'\x15'
-# 0x16 CC.ConfigGet
-# 0x17 CC.ConfigSet
-# 0x18 SC.Config
+# 0x16 CC.ConfigGet (Reserved)
+# 0x17 CC.ConfigSet (Reserved)
+# 0x18 SC.Config (Reserved)
 # 0x19 CC.RunJob
 RUN_JOB = b'\x19'
 # 0x1A SC.Acquired
@@ -63,20 +64,19 @@ DATA = b'\x1E'
 RECV_DATA = b'\x1F'
 # 0x20 WC.WorkData
 WORK_DATA = b'\x20'
-# 0x20 WC.JobAssigned
+# 0x21 WC.JobAssigned
 JOB_ASSIGNED = b'\x21'
 
 
 class Command(object):
+    """Base class for all network commands."""
     _payload: bytes
 
-    def __init__(self, payload: Any) -> None:
+    def __init__(self, payload: Union[bytes, str, List[Any]]) -> None:
         if isinstance(payload, list):
-            payload = b''.join([utils.to_bytes(p) for p in payload])
-        elif isinstance(payload, str):
-            payload = utils.to_bytes(payload)
-
-        self._payload = payload
+            self._payload = b''.join([utils.to_bytes(p) for p in payload])
+        else:
+            self._payload = utils.to_bytes(payload)
 
     def __bytes__(self) -> bytes:
         return self._payload
@@ -85,19 +85,19 @@ class Command(object):
 class Noop(Command):
 
     def __init__(self) -> None:
-        Command.__init__(self, NOOP)
+        super().__init__(NOOP)
 
 
 class GrabJob(Command):
 
     def __init__(self) -> None:
-        Command.__init__(self, GRAB_JOB)
+        super().__init__(GRAB_JOB)
 
 
 class SchedLater(Command):
 
     def __init__(self, job_handle: bytes, delay: int, count: int = 0) -> None:
-        Command.__init__(self, [
+        super().__init__([
             SCHED_LATER, job_handle,
             utils.encode_int64(delay),
             utils.encode_int16(count)
@@ -107,56 +107,55 @@ class SchedLater(Command):
 class WorkDone(Command):
 
     def __init__(self, job_handle: bytes, buf: Any = None) -> None:
-        Command.__init__(self, [WORK_DONE, job_handle, utils.to_bytes(buf)])
+        super().__init__([WORK_DONE, job_handle, utils.to_bytes(buf)])
 
 
 class WorkFail(Command):
 
     def __init__(self, job_handle: bytes) -> None:
-        Command.__init__(self, [WORK_FAIL, job_handle])
+        super().__init__([WORK_FAIL, job_handle])
 
 
 class CanDo(Command):
 
     def __init__(self, func: str) -> None:
-        Command.__init__(self, [CAN_DO, utils.encode_str8(func)])
+        super().__init__([CAN_DO, utils.encode_str8(func)])
 
 
 class Broadcast(Command):
 
     def __init__(self, func: str) -> None:
-        Command.__init__(self, [BROADCAST, utils.encode_str8(func)])
+        super().__init__([BROADCAST, utils.encode_str8(func)])
 
 
 class CantDo(Command):
 
     def __init__(self, func: str) -> None:
-        Command.__init__(self, [CANT_DO, utils.encode_str8(func)])
+        super().__init__([CANT_DO, utils.encode_str8(func)])
 
 
 class SubmitJob(Command):
 
     def __init__(self, job: Job) -> None:
-        Command.__init__(self, [SUBMIT_JOB, bytes(job)])
+        super().__init__([SUBMIT_JOB, bytes(job)])
 
 
 class Status(Command):
 
     def __init__(self) -> None:
-        Command.__init__(self, STATUS)
+        super().__init__(STATUS)
 
 
 class DropFunc(Command):
 
     def __init__(self, func: str) -> None:
-        Command.__init__(self, [DROP_FUNC, utils.encode_str8(func)])
+        super().__init__([DROP_FUNC, utils.encode_str8(func)])
 
 
 class RemoveJob(Command):
 
     def __init__(self, func: str, name: Any) -> None:
-        Command.__init__(
-            self,
+        super().__init__(
             [REMOVE_JOB,
              utils.encode_str8(func),
              utils.encode_str8(name)])
@@ -165,13 +164,13 @@ class RemoveJob(Command):
 class RunJob(Command):
 
     def __init__(self, job: Job) -> None:
-        Command.__init__(self, [RUN_JOB, bytes(job)])
+        super().__init__([RUN_JOB, bytes(job)])
 
 
 class Acquire(Command):
 
     def __init__(self, name: Any, count: int, handle: Any) -> None:
-        Command.__init__(self, [
+        super().__init__([
             ACQUIRE,
             utils.encode_str8(name),
             utils.encode_int16(count), handle
@@ -181,22 +180,22 @@ class Acquire(Command):
 class Release(Command):
 
     def __init__(self, name: Any, handle: Any) -> None:
-        Command.__init__(self, [RELEASE, utils.encode_str8(name), handle])
+        super().__init__([RELEASE, utils.encode_str8(name), handle])
 
 
 class RecvData(Command):
 
     def __init__(self, job: Job) -> None:
-        Command.__init__(self, [RECV_DATA, bytes(job)])
+        super().__init__([RECV_DATA, bytes(job)])
 
 
 class WorkData(Command):
 
     def __init__(self, job_handle: bytes, buf: Any = None) -> None:
-        Command.__init__(self, [WORK_DATA, job_handle, utils.to_bytes(buf)])
+        super().__init__([WORK_DATA, job_handle, utils.to_bytes(buf)])
 
 
 class JobAssigned(Command):
 
     def __init__(self) -> None:
-        Command.__init__(self, JOB_ASSIGNED)
+        super().__init__(JOB_ASSIGNED)

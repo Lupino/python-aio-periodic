@@ -8,6 +8,8 @@ from typing import Any, TYPE_CHECKING, Callable, cast, Coroutine
 if TYPE_CHECKING:
     from .worker import Worker
 
+WithLockTaskFunc = Callable[[], Coroutine[Any, Any, Any]]
+
 
 class FinishedError(Exception):
     pass
@@ -87,7 +89,7 @@ class Job(object):
     async def with_lock(self,
                         name: str,
                         count: int,
-                        task: Callable[[], Coroutine[Any, Any, Any]],
+                        task: WithLockTaskFunc,
                         release: bool = False) -> Any:
         acquired = await self.acquire(name, count)
         if acquired:

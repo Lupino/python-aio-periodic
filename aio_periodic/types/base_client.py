@@ -1,23 +1,23 @@
 import asyncio
-from asyncio import StreamReader, StreamWriter, timeout
+import logging
+from binascii import crc32
+from time import time
+from typing import (Optional, Dict, List, Any, Callable, Coroutine, Union,
+                    cast, AsyncIterable)
+from asyncio import StreamReader, StreamWriter
+
+# Internal imports
 from .agent import Agent
 from .utils import decode_int32, MAGIC_RESPONSE, encode_int32
 from .command import PING, PONG, NO_JOB, JOB_ASSIGN, SUCCESS, Command
 from . import command as cmd
-from binascii import crc32
 from .job import Job
 from ..transport import BaseTransport
-from time import time
-from typing import Optional, Dict, List, Any, Callable, Coroutine, cast, \
-    AsyncIterable
-from mypy_extensions import KwArg, VarArg
 
 try:
     from uhashring import HashRing  # type: ignore
-except Exception:
+except ImportError:
     HashRing = None
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -26,17 +26,27 @@ def is_success(payload: bytes) -> bool:
     return payload == SUCCESS
 
 
+OnConnectedFunc = Callable[[], Coroutine[Any, Any, None]]
+OnDisconnectedFunc = Callable[[], Coroutine[Any, Any, None]]
+MessageCallbackFunc = Callable[[bytes, bytes], Coroutine[Any, Any, None]]
+ParseFunc = Callable[[bytes], Any]
+
+SyncRunJobStreamFunc = Callable[[bytes], None]
+AsyncRunJobStreamFunc = Callable[[bytes], Coroutine[Any, Any, Any]]
+RunJobStreamFunc = Union[SyncRunJobStreamFunc, AsyncRunJobStreamFunc]
+
+
 class BaseClient(object):
     connected_evt: asyncio.Event
-    connid: bytes | None
+    connid: Optional[bytes]
     _reader: StreamReader
     _writer: StreamWriter
     msgid_locker: asyncio.Lock
-    _send_locker: asyncio.Lock
+    send_locker: asyncio.Lock
     _clientType: bytes
-    _cb: Callable[[bytes, bytes], Coroutine[Any, Any, None]] | None
-    _on_connected: Callable[[], Coroutine[Any, Any, None]] | None
-    _on_disconnected: Callable[[], Coroutine[Any, Any, None]] | None
+    _cb: Optional[MessageCallbackFunc]
+    _on_connected: Optional[OnConnectedFunc]
+    _on_disconnected: Optional[OnDisconnectedFunc]
     agents: Dict[bytes, Agent]
     _processes: List[asyncio.Task[Any]]
     prefix: str
@@ -46,50 +56,30 @@ class BaseClient(object):
     def __init__(
         self,
         clientType: bytes,
-        message_callback: Optional[Callable[
-            [bytes, bytes],
-            Coroutine[Any, Any, Any],
-        ]] = None,
-        on_connected: Optional[Callable[
-            [],
-            Coroutine[Any, Any, Any],
-        ]] = None,
-        on_disconnected: Optional[Callable[
-            [],
-            Coroutine[Any, Any, Any],
-        ]] = None,
+        message_callback: Optional[MessageCallbackFunc] = None,
+        on_connected: Optional[OnConnectedFunc] = None,
+        on_disconnected: Optional[OnDisconnectedFunc] = None,
     ):
-
-        # self.connected_evt = None
-
         self.connid = None
-        # self._reader = None
-        # self._writer = None
-        self._buffer = b''
         self._clientType = clientType
-        self.agents = dict()
-        # self.msgid_locker = None
+        self.agents = {}
         self._last_msgid = 0
 
         self._on_connected = on_connected
         self._on_disconnected = on_disconnected
-
         self._cb = message_callback
+
         self._initialized = False
-        # self._send_locker = None
         self._processes = []
 
         self.prefix = ''
         self.subfix = ''
-
         self.ping_at = time()
 
-    def set_on_connected(self, func: Callable[[], Coroutine[Any, Any,
-                                                            Any]]) -> None:
+    def set_on_connected(self, func: OnConnectedFunc) -> None:
         self._on_connected = func
 
-    def set_on_disconnected(
-            self, func: Callable[[], Coroutine[Any, Any, Any]]) -> None:
+    def set_on_disconnected(self, func: OnDisconnectedFunc) -> None:
         self._on_disconnected = func
 
     def set_prefix(self, prefix: str) -> None:
@@ -101,10 +91,8 @@ class BaseClient(object):
     def _add_prefix_subfix(self, func: str) -> str:
         if self.prefix:
             func = f'{self.prefix}{func}'
-
         if self.subfix:
             func = f'{func}{self.subfix}'
-
         return func
 
     def _strip_prefix_subfix(self, func: str) -> str:
@@ -117,38 +105,42 @@ class BaseClient(object):
     def initialize(self) -> None:
         self._initialized = True
         self.connected_evt = asyncio.Event()
-        self._send_locker = asyncio.Lock()
+        self.send_locker = asyncio.Lock()
         self.msgid_locker = asyncio.Lock()
 
     def start_processes(self) -> None:
-        task = asyncio.create_task(self.loop_agent())
-        self._processes.append(task)
-        task = asyncio.create_task(self.check_alive())
-        self._processes.append(task)
+        # Create background tasks for message loop and health check
+        self._processes.append(asyncio.create_task(self.loop_agent()))
+        self._processes.append(asyncio.create_task(self.check_alive()))
 
     def stop_processes(self) -> None:
         for task in self._processes:
             task.cancel()
+        self._processes.clear()
 
     async def connect(self, transport: Optional[BaseTransport] = None) -> bool:
         if self._initialized:
             self.close()
         else:
             if not transport:
-                raise Exception('connect required transport')
+                raise Exception('Transport required for initial connection')
             self.initialize()
 
         if transport:
             self.transport = transport
 
+        # Establish connection via transport layer
         reader, writer = await self.transport.get()
         self._writer = writer
         self._reader = reader
-        self._buffer = b''
+
+        # Handshake: Send client type
         agent = Agent(self)
         await agent.send(self._clientType, True)
+
         self.connected_evt.set()
         self.start_processes()
+
         if self._on_connected:
             await self._on_connected()
 
@@ -158,17 +150,18 @@ class BaseClient(object):
 
         async def connect_loop() -> None:
             delay = 1
-            noconnected = True
-            while noconnected:
+            not_connected = True
+            while not_connected:
                 try:
-                    logger.info('reconnecting...')
+                    logger.info('Reconnecting...')
                     await self.connect()
-                    logger.info('connected')
-                    noconnected = False
+                    logger.info('Connected')
+                    not_connected = False
                 except Exception as e:
-                    logger.error(f'reconnecting failed: {e}')
+                    logger.error(f'Reconnect failed: {e}')
 
-                await asyncio.sleep(delay)
+                if not_connected:
+                    await asyncio.sleep(delay)
 
         asyncio.create_task(connect_loop())
 
@@ -176,114 +169,121 @@ class BaseClient(object):
     def connected(self) -> bool:
         return self.connected_evt.is_set()
 
-    async def _receive(self, size: int) -> bytes:
-        while self.connected:
-            if len(self._buffer) >= size:
-                buf = self._buffer[:size]
-                self._buffer = self._buffer[size:]
-                return buf
-
-            is_recv_empty = False
-            try:
-                async with timeout(100):
-                    buf = await self._reader.read(max(4096, size))
-                    if len(buf) == 0:
-                        is_recv_empty = True
-
-                    self._buffer += buf
-
-            except TimeoutError:
-                pass
-            except Exception:
-                break
-
-            if is_recv_empty:
-                break
-
-        return b''
-
     async def check_alive(self) -> None:
+        """Periodically ping the server to ensure connection health."""
         while True:
             await self.connected_evt.wait()
             await asyncio.sleep(5)
 
             now = time()
 
+            # Skip if recent activity
             if self.ping_at + 10 > now:
                 continue
 
+            # Connection timeout
             if self.ping_at + 120 < now:
+                logger.warning("Connection timed out. Resetting.")
                 self.connected_evt.clear()
-                self._reader.feed_eof()
+                # Determine how to close based on available method
+                if hasattr(self._reader, 'feed_eof'):
+                    self._reader.feed_eof()
+                # Alternatively, close writer to trigger reconnection
+                self.close()
                 continue
 
             try:
                 await self.ping()
             except Exception:
+                # Ping failed, loop will retry or timeout eventually
                 pass
 
     def get_next_msgid(self) -> bytes:
-        for _ in range(1000000):
+        """Generate a unique message ID for agents."""
+        # Limit loops to prevent infinite hang in bad state
+        for _ in range(1_000_000):
             self._last_msgid += 1
             if self._last_msgid > 0xFFFFFF00:
                 self._last_msgid = 0
 
-            if self._last_msgid % 100000 == 0:
-                count = len(self.agents.keys())
+            # Log stats periodically
+            if self._last_msgid % 100_000 == 0:
+                count = len(self.agents)
                 logger.info(f'Last msgid {self._last_msgid} Agents {count}')
 
             msgid = encode_int32(self._last_msgid)
-            if not self.agents.get(msgid):
+            if msgid not in self.agents:
                 return msgid
 
-        raise Exception('Not enough msgid avaliable')
+        raise Exception('No available msgid found')
 
     def agent(self, timeout: int = 10, autoid: bool = True) -> Agent:
         return Agent(self, timeout, autoid)
 
     def get_writer(self) -> asyncio.StreamWriter:
         if not self._writer:
-            raise Exception('no initialized')
+            raise Exception('Client not initialized')
         return self._writer
 
     async def loop_agent(self) -> None:
+        """Main loop handling incoming messages from the server."""
 
-        async def receive() -> bytes:
-            magic = await self._receive(4)
-            if not magic:
-                raise Exception("Closed")
+        async def receive_exact(n: int) -> bytes:
+            try:
+                # Use readexactly for efficient buffering and EOF handling
+                data = await self._reader.readexactly(n)
+                return data
+            except asyncio.IncompleteReadError:
+                raise Exception("Connection closed by peer")
+
+        async def receive_packet() -> bytes:
+            magic = await receive_exact(4)
             if magic != MAGIC_RESPONSE:
-                raise Exception('Magic not match.')
-            header = await self._receive(4)
+                raise Exception('Magic mismatch')
+
+            header = await receive_exact(4)
             length = decode_int32(header)
-            crc = await self._receive(4)
-            payload = await self._receive(length)
+
+            crc = await receive_exact(4)
+            payload = await receive_exact(length)
+
             if decode_int32(crc) != crc32(payload):
-                raise Exception('CRC not match.')
+                raise Exception('CRC mismatch')
             return payload
 
-        async def main_receive_loop() -> None:
+        try:
+            # First packet is always the connection ID
+            self.connid = await receive_packet()
+
             while self.connected:
-                payload = await receive()
+                payload = await receive_packet()
+
+                # Parse Message ID (first 4 bytes)
                 msgid = payload[0:4]
                 payload = payload[4:]
 
-                if payload[0:1] == NO_JOB:
+                # Handle specific commands
+                command_byte = payload[0:1]
+
+                if command_byte == NO_JOB:
                     continue
-                if payload[0:1] == JOB_ASSIGN:
+
+                if command_byte == JOB_ASSIGN:
                     if self._cb:
                         await self._cb(payload, msgid)
                     continue
 
+                # Route data to the specific agent waiting for it
                 agent = self.agents.get(msgid)
                 if agent:
                     agent.feed_data(payload)
                 else:
-                    logger.error('Agent %r not found.' % msgid)
+                    logger.error(f'Agent {msgid!r} not found.')
 
-        try:
-            self.connid = await receive()
-            await main_receive_loop()
+        except (asyncio.CancelledError, Exception) as e:
+            # Handle disconnection
+            if not isinstance(e, asyncio.CancelledError):
+                logger.error(f"Loop agent error: {e}")
         finally:
             if self._on_disconnected:
                 try:
@@ -291,23 +291,22 @@ class BaseClient(object):
                     if asyncio.iscoroutine(ret):
                         await ret
                 except Exception as e:
-                    logger.error(f'processing on_disconnected error: {e}')
+                    logger.error(f'on_disconnected error: {e}')
 
+            # Trigger reconnection logic
             self.start_connect()
 
     async def send_command_and_receive(self,
                                        command: Command | bytes,
-                                       parse: Optional[Callable[[bytes],
-                                                                Any]] = None,
+                                       parse: Optional[ParseFunc] = None,
                                        timeout: int = 10) -> Any | bytes:
         async with self.agent(timeout) as agent:
             await agent.send(command)
             payload = await agent.receive()
-            self.ping_at = time()
+            self.ping_at = time()  # Update activity timestamp
             if parse:
                 return parse(payload)
-            else:
-                return payload
+            return payload
 
     async def send_command(self,
                            command: Command | bytes,
@@ -326,10 +325,12 @@ class BaseClient(object):
                                                       timeout=timeout))
 
     def close(self) -> None:
-        self._writer.close()
+        if self._writer:
+            self._writer.close()
 
         self.stop_processes()
 
+        # Release any waiting agents
         for agent in self.agents.values():
             agent.feed_data(b'')
 
@@ -341,7 +342,6 @@ class BaseClient(object):
             job = Job(*args, **kwargs)
 
         job.func = self._add_prefix_subfix(job.func)
-
         return cast(
             bool, await self.send_command_and_receive(cmd.SubmitJob(job),
                                                       is_success))
@@ -349,10 +349,7 @@ class BaseClient(object):
     async def run_job(self,
                       *args: Any,
                       job: Optional[Job] = None,
-                      stream: Optional[Callable[[bytes], None]
-                                       | Callable[[bytes],
-                                                  Coroutine[Any, Any,
-                                                            Any]]] = None,
+                      stream: Optional[RunJobStreamFunc] = None,
                       **kwargs: Any) -> bytes:
         if job is None:
             job = Job(*args, **kwargs)
@@ -363,34 +360,40 @@ class BaseClient(object):
         timeout = job.timeout
 
         def parse(payload: bytes) -> bytes:
-            if payload[0] == cmd.NO_WORKER[0]:
+            if payload.startswith(cmd.NO_WORKER):
                 raise Exception('no worker')
-
-            if payload[0] == cmd.DATA[0]:
+            if payload.startswith(cmd.DATA):
                 return payload[1:]
-
             return payload
 
-        task = None
+        task: Optional[asyncio.Task[None]] = None
         if stream is not None:
-            func = job.func[:]
-            name = job.name[:]
-
+            # Handle streaming response
+            func = job.func
+            name = job.name
             fut: asyncio.Future[bool] = asyncio.Future()
 
-            async def do_task() -> None:
+            async def do_stream_task() -> None:
                 async for data in self.recv_job_data(func, name, timeout, fut):
                     ret = stream(data)
                     if asyncio.iscoroutine(ret):
                         await ret
 
-            task = asyncio.create_task(do_task())
-
-            await fut
+            task = asyncio.create_task(do_stream_task())
+            # Wait for stream setup if needed, but here we proceed to send cmd
+            # Ideally we rely on the future 'fut' being set by recv loop
 
         job.func = self._add_prefix_subfix(job.func)
         rj = cmd.RunJob(job)
-        ret = await self.send_command_and_receive(rj, parse, timeout)
+
+        try:
+            ret = await self.send_command_and_receive(rj, parse, timeout)
+            if task:
+                # Wait for stream to finish if successful
+                await fut
+        finally:
+            if task and not task.done():
+                task.cancel()
 
         if task:
             await task
@@ -413,16 +416,15 @@ class BaseClient(object):
                 stat_s = stat_s.strip()
                 if not stat_s:
                     continue
-                stat = stat_s.split(',')
-                retval[stat[0]] = {
-                    'func_name': stat[0],
-                    'worker_count': int(stat[1]),
-                    'job_count': int(stat[2]),
-                    'processing': int(stat[3]),
-                    'locked': int(stat[4]),
-                    'sched_at': int(stat[5])
+                parts = stat_s.split(',')
+                retval[parts[0]] = {
+                    'func_name': parts[0],
+                    'worker_count': int(parts[1]),
+                    'job_count': int(parts[2]),
+                    'processing': int(parts[3]),
+                    'locked': int(parts[4]),
+                    'sched_at': int(parts[5])
                 }
-
             return retval
 
         return await self.send_command_and_receive(cmd.Status(), parse)
@@ -447,17 +449,17 @@ class BaseClient(object):
             await agent.send(cmd.RecvData(job))
             while True:
                 payload = await agent.receive()
-                if payload[0] == cmd.NO_WORKER[0]:
+
+                if payload.startswith(cmd.NO_WORKER):
                     raise Exception('no worker')
 
-                if payload[0] == cmd.DATA[0]:
+                if payload.startswith(cmd.DATA):
                     payload = payload[1:]
                     if payload == b'EOF':
                         break
-
                     yield payload
 
-                if payload[0] == cmd.SUCCESS[0]:
+                if payload.startswith(cmd.SUCCESS):
                     if fut:
                         fut.set_result(True)
 
@@ -468,11 +470,11 @@ class BaseClient(object):
 class BaseCluster(object):
     clients: List[BaseClient]
     entrypoints: List[str]
-    hr: HashRing
+    hr: Any  # HashRing type
 
     def __init__(
         self,
-        clientclass: Callable[[VarArg(Any), KwArg(Any)], BaseClient],
+        clientclass: Callable[..., BaseClient],
         entrypoints: List[str],
         *args: Any,
         **kwargs: Any,
@@ -492,7 +494,7 @@ class BaseCluster(object):
         self.hr = HashRing(nodes=nodes, hash_fn='ketama')
 
     def get(self, name: str) -> BaseClient:
-        '''get one client by hashring'''
+        """Get one client by hashring."""
         return cast(BaseClient, self.hr[name])
 
     async def run(self,
@@ -507,7 +509,6 @@ class BaseCluster(object):
             ret = await method(*args, **kwargs)
             if reduce:
                 retval = reduce(retval, ret)
-
         return retval
 
     def run_sync(self,
@@ -522,13 +523,12 @@ class BaseCluster(object):
             ret = method(*args, **kwargs)
             if reduce:
                 retval = reduce(retval, ret)
-
         return retval
 
-    def set_on_connected(self, func: str) -> None:
+    def set_on_connected(self, func: Any) -> None:
         self.run_sync('set_on_connected', func)
 
-    def set_on_disconnected(self, func: str) -> None:
+    def set_on_disconnected(self, func: Any) -> None:
         self.run_sync('set_on_disconnected', func)
 
     def set_prefix(self, prefix: str) -> None:
@@ -538,23 +538,22 @@ class BaseCluster(object):
         self.run_sync('set_subfix', subfix)
 
     async def connect(self, transports: Dict[str, BaseTransport]) -> None:
-        '''connect to servers'''
+        """Connect to all servers."""
         for entrypoint, client in zip(self.entrypoints, self.clients):
             transport = transports.get(entrypoint)
             if not transport:
-                raise Exception('no transport ' + entrypoint)
-
+                raise Exception(f'No transport for {entrypoint}')
             await client.connect(transport)
 
     def close(self) -> None:
-        '''close all the servers'''
+        """Close all server connections."""
         self.run_sync('close')
 
     async def submit_job(self,
                          *args: Any,
                          job: Optional[Job] = None,
                          **kwargs: Any) -> bool:
-        '''submit job to one server'''
+        """Submit job to one server based on hashing."""
         if job is None:
             job = Job(*args, **kwargs)
         client = self.get(job.name)
@@ -563,19 +562,13 @@ class BaseCluster(object):
     async def run_job(self,
                       *args: Any,
                       job: Optional[Job] = None,
-                      stream: Optional[Callable[[bytes], None]
-                                       | Callable[[bytes],
-                                                  Coroutine[Any, Any,
-                                                            Any]]] = None,
+                      stream: Optional[RunJobStreamFunc] = None,
                       **kwargs: Any) -> bytes:
-        '''run job to one server'''
+        """Run job on one server based on hashing."""
         if job is None:
             job = Job(*args, **kwargs)
         client = self.get(job.name)
-        return await client.run_job(
-            job=job,
-            stream=stream,
-        )
+        return await client.run_job(job=job, stream=stream)
 
     async def recv_job_data(
         self,
@@ -584,35 +577,35 @@ class BaseCluster(object):
         timeout: int = 120,
         fut: Optional[asyncio.Future[bool]] = None,
     ) -> AsyncIterable[bytes]:
-        '''recv job from one server'''
+        """Receive job data from one server."""
         client = self.get(name)
         async for v in client.recv_job_data(func, name, timeout, fut):
             yield v
 
     async def remove_job(self, func: str, name: str) -> bool:
-        '''remove job from servers'''
+        """Remove job from servers."""
         client = self.get(name)
         return await client.remove_job(func, name)
 
     async def drop_func(self, func: str) -> None:
-        '''drop func from servers'''
+        """Drop func from all servers."""
         await self.run('drop_func', func)
 
     async def status(self) -> Any:
-        '''status from servers and merge the result'''
+        """Get status from all servers and merge results."""
 
         def reduce(stats: Any, stat: Any) -> Any:
             for func in stat.keys():
                 if not stats.get(func):
                     stats[func] = stat[func]
                 else:
-                    stats[func]['worker_count'] += stat[func]['worker_count']
-                    stats[func]['job_count'] += stat[func]['job_count']
-                    stats[func]['processing'] += stat[func]['processing']
-
-                    if stats[func]['sched_at'] > stat[func]['sched_at']:
-                        stats[func]['sched_at'] = stat[func]['sched_at']
-
+                    s_ptr = stats[func]
+                    n_ptr = stat[func]
+                    s_ptr['worker_count'] += n_ptr['worker_count']
+                    s_ptr['job_count'] += n_ptr['job_count']
+                    s_ptr['processing'] += n_ptr['processing']
+                    if s_ptr['sched_at'] > n_ptr['sched_at']:
+                        s_ptr['sched_at'] = n_ptr['sched_at']
             return stats
 
         return await self.run('status', reduce=reduce, initialize={})

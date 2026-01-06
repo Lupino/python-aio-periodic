@@ -1,19 +1,29 @@
 import json
-from typing import Any
+from typing import Any, Union
 
 
-class DoneResponse(object):
+class DoneResponse:
+    """
+    Indicates that the job finished successfully.
+    Optionally carries a payload (buf) back to the caller.
+    """
     buf: Any
 
     def __init__(self, buf: Any = None) -> None:
         self.buf = buf
 
 
-class FailResponse(object):
+class FailResponse:
+    """
+    Indicates that the job failed execution.
+    """
     pass
 
 
-class SchedLaterResponse(object):
+class SchedLaterResponse:
+    """
+    Indicates that the job should be retried or rescheduled later.
+    """
     delay: int
     count: int
 
@@ -22,17 +32,25 @@ class SchedLaterResponse(object):
         self.count = count
 
 
+# Type alias for valid return types from a worker function
+ResponseTypes = Union[DoneResponse, FailResponse, SchedLaterResponse]
+
+
 def done(buf: Any = None) -> DoneResponse:
+    """Helper to create a DoneResponse."""
     return DoneResponse(buf)
 
 
 def jsonify(data: Any) -> DoneResponse:
-    return DoneResponse(bytes(json.dumps(data), 'utf-8'))
+    """Helper to create a DoneResponse with JSON-encoded data."""
+    return DoneResponse(json.dumps(data).encode('utf-8'))
 
 
 def fail() -> FailResponse:
+    """Helper to create a FailResponse."""
     return FailResponse()
 
 
 def sched_later(delay: int, count: int = 0) -> SchedLaterResponse:
+    """Helper to create a SchedLaterResponse."""
     return SchedLaterResponse(delay, count)

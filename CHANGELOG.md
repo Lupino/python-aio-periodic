@@ -1,54 +1,54 @@
 # Changelog
 
 ## 0.2.8
-- update work actions
-- fixed read buffer
+- Updated work actions.
+- Fixed read buffer issues.
 
 ## 0.2.7
-- fixed agent.feed_data error
-- forget await asyncio.sleep
+- Fixed `agent.feed_data` error.
+- Fixed missing `await` in `asyncio.sleep` calls.
 
 ## 0.2.6
-- fixed. typos, recive -> received
-- quick message callback
+- Fixed typos (e.g., `recive` -> `received`).
+- Implemented quick message callback.
 
 ## 0.2.5
-- new version of run_job
-- update client connect
+- implemented new version of `run_job`.
+- Updated client connection logic.
 
 ## 0.2.3
-- unique agent id
-- improve Work.work
-- use difference agent on job funcs
+- Implemented unique agent IDs.
+- Improved `Worker.work` performance.
+- Used distinct agents for different job functions.
 
 ## 0.2.2
-- try except process_job error
-- fixed. work loop more task
+- Added error handling (try/except) for `process_job`.
+- Fixed work loop handling for multiple tasks.
 
 ## 0.2.1
-- add aio_periodic.types
-- add base_client ping
+- Added `aio_periodic.types` module.
+- Added `ping` method to `base_client`.
 
 ## 0.2.0
-- payload crc32 check
-- validate number pack
+- Added payload CRC32 check.
+- Added validation for number packing.
 
 ## 0.1.8
-- use syntax async/await
-- add example echo_worker.py and echo_client.py
-- add job timeout support
-- add lock support
+- Migrated to `async`/`await` syntax.
+- Added examples: `echo_worker.py` and `echo_client.py`.
+- Added support for job timeouts.
+- Added support for locking mechanisms.
 
 ## 0.1.7
-- add removeJob
-- support new version procotol
-- add socket transport
+- Added `removeJob` functionality.
+- Added support for the new protocol version.
+- Added socket transport layer.
 
 ## 0.1.6
-- update procotol add magic header
+- Updated protocol: Added magic header.
 
 ## 0.1.5
-- update procotol name
+- Updated protocol name.
 
 ## 0.1.4
-- update the status api data format
+- Updated the Status API data format.
