@@ -28,7 +28,7 @@ async def test_lock(job: Job) -> None:
 
 async def main() -> None:
     worker = Worker([])
-    tp = Transport('unix:///tmp/periodic.sock')
+    tp = Transport('tcp://127.0.0.1:5000')
     # rsa_tp = RSATransport(tp, 'private_key.pem', 'server_public_key.pem')
     await worker.connect(tp)
 

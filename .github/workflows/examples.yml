@@ -1,0 +1,53 @@
+name: examples
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  run-examples:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e .
+
+      - name: Pull periodicd
+        run: docker pull lupino/periodicd:1.2.5.0
+
+      - name: Start periodicd (tcp :5000)
+        run: |
+          docker run -d --name periodicd -p 5000:5000 lupino/periodicd:1.2.5.0
+
+          # wait for port
+          for i in $(seq 1 50); do
+            (echo > /dev/tcp/127.0.0.1/5000) >/dev/null 2>&1 && break
+            sleep 0.2
+          done
+          (echo > /dev/tcp/127.0.0.1/5000)
+
+      - name: Run echo worker (service)
+        run: |
+          python examples/echo_worker.py > worker.log 2>&1 &
+          echo $! > worker.pid
+          sleep 1
+
+      - name: Run echo client
+        run: |
+          python examples/echo_client.py
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f worker.pid ]; then kill "$(cat worker.pid)" || true; fi
+          docker logs periodicd || true
+          docker rm -f periodicd || true
+          cat worker.log || true
