@@ -1,13 +1,22 @@
 from aio_periodic import Transport, Client, Job, RSATransport, RSAMode
 import asyncio
+import os
 from time import time
 
 
 async def main() -> None:
     client = Client()
     tp = Transport('tcp://127.0.0.1:5000')
-    # rsa_tp = RSATransport(tp, 'private_key.pem', 'server_public_key.pem')
-    await client.connect(tp)
+    if os.getenv('PERIODIC_RSA_MODE'):
+        rsa_tp = RSATransport(
+            tp,
+            os.environ['PERIODIC_CLIENT_PRIVATE_KEY'],
+            os.environ['PERIODIC_SERVER_PUBLIC_KEY'],
+            mode=RSAMode[os.environ['PERIODIC_RSA_MODE']],
+        )
+        await client.connect(rsa_tp)
+    else:
+        await client.connect(tp)
 
     job = Job(func='echo', name='test_echo')
     job2 = Job(func='echo',
