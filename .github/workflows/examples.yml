@@ -38,7 +38,18 @@ jobs:
         run: |
           python examples/echo_worker.py > worker.log 2>&1 &
           echo $! > worker.pid
-          sleep 1
+
+      - name: Wait for worker registered funcs
+        run: |
+          # Wait until echo worker has registered expected functions
+          for i in $(seq 1 50); do
+            docker exec periodicd periodic status | grep -E "\b(echo|echo_later|test_lock)\b" && exit 0
+            sleep 0.2
+          done
+
+          echo "Timed out waiting for worker to register funcs" >&2
+          docker exec periodicd periodic status || true
+          exit 1
 
       - name: Run echo client
         run: |
