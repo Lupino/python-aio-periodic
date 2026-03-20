@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from binascii import crc32
+from contextlib import suppress
 from time import time
 from typing import (Optional, Dict, List, Any, Callable, Coroutine, Union,
                     cast, AsyncIterable)
@@ -39,8 +40,8 @@ RunJobStreamFunc = Union[SyncRunJobStreamFunc, AsyncRunJobStreamFunc]
 class BaseClient(object):
     connected_evt: asyncio.Event
     connid: Optional[bytes]
-    _reader: StreamReader
-    _writer: StreamWriter
+    _reader: Optional[StreamReader]
+    _writer: Optional[StreamWriter]
     msgid_locker: asyncio.Lock
     send_locker: asyncio.Lock
     _clientType: bytes
@@ -70,6 +71,13 @@ class BaseClient(object):
         self._cb = message_callback
 
         self._initialized = False
+        # Keep these ready so properties like `connected` are safe before
+        # the first `connect()` call.
+        self.connected_evt = asyncio.Event()
+        self.send_locker = asyncio.Lock()
+        self.msgid_locker = asyncio.Lock()
+        self._reader = None
+        self._writer = None
         self._processes = []
 
         self.prefix = ''
@@ -325,13 +333,15 @@ class BaseClient(object):
                                                       timeout=timeout))
 
     def close(self) -> None:
+        self.connected_evt.clear()
+
         if self._writer:
             self._writer.close()
 
         self.stop_processes()
 
         # Release any waiting agents
-        for agent in self.agents.values():
+        for agent in list(self.agents.values()):
             agent.feed_data(b'')
 
     async def submit_job(self,
@@ -396,7 +406,8 @@ class BaseClient(object):
                 task.cancel()
 
         if task:
-            await task
+            with suppress(asyncio.CancelledError):
+                await task
 
         return cast(bytes, ret)
 

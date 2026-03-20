@@ -59,7 +59,7 @@ class Worker(BaseClient):
     grab_agents: Dict[bytes, GrabAgent]
     executor: Optional[Executor]
 
-    def __init__(self, enabled_tasks: List[str] = []) -> None:
+    def __init__(self, enabled_tasks: Optional[List[str]] = None) -> None:
         BaseClient.__init__(self, TYPE_WORKER, self._message_callback,
                             self._do_on_connected)
 
@@ -67,7 +67,7 @@ class Worker(BaseClient):
         self.lockers = {}
         self._tasks = {}
         self._broadcast_tasks = []
-        self.enabled_tasks = enabled_tasks
+        self.enabled_tasks = list(enabled_tasks) if enabled_tasks else []
 
         # Initialize containers
         self.grab_agents = {}
