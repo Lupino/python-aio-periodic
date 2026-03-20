@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+- Fixed unintended auto-reconnect after explicit `client.close()`.
+- Added explicit reconnect control: `client.close(reconnect=True)`.
+- Added regression unit tests for close/reconnect behavior.
+- Added CI workflow step to run the new unit test.
+
 ## 0.2.8
 - Updated work actions.
 - Fixed read buffer issues.
