@@ -194,8 +194,9 @@ class BaseClient(object):
                 logger.warning("Connection timed out. Resetting.")
                 self.connected_evt.clear()
                 # Determine how to close based on available method
-                if hasattr(self._reader, 'feed_eof'):
-                    self._reader.feed_eof()
+                reader = self._reader
+                if reader is not None and hasattr(reader, 'feed_eof'):
+                    reader.feed_eof()
                 # Alternatively, close writer to trigger reconnection
                 self.close()
                 continue
@@ -235,11 +236,14 @@ class BaseClient(object):
 
     async def loop_agent(self) -> None:
         """Main loop handling incoming messages from the server."""
+        reader = self._reader
+        if reader is None:
+            raise Exception('Client reader is not initialized')
 
         async def receive_exact(n: int) -> bytes:
             try:
                 # Use readexactly for efficient buffering and EOF handling
-                data = await self._reader.readexactly(n)
+                data = await reader.readexactly(n)
                 return data
             except asyncio.IncompleteReadError:
                 raise Exception("Connection closed by peer")
