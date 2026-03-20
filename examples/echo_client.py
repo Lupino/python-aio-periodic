@@ -4,15 +4,20 @@ import os
 from time import time
 
 
+def current_mode() -> str:
+    return os.getenv('PERIODIC_MODE') or os.getenv('PERIODIC_RSA_MODE') or 'Normal'
+
+
 async def main() -> None:
     client = Client()
     tp = Transport('tcp://127.0.0.1:5000')
-    if os.getenv('PERIODIC_RSA_MODE'):
+    mode = current_mode()
+    if mode != 'Normal':
         rsa_tp = RSATransport(
             tp,
-            os.environ['PERIODIC_CLIENT_PRIVATE_KEY'],
-            os.environ['PERIODIC_SERVER_PUBLIC_KEY'],
-            mode=RSAMode[os.environ['PERIODIC_RSA_MODE']],
+            os.getenv('PERIODIC_CLIENT_PRIVATE_KEY', 'client_private.pem'),
+            os.getenv('PERIODIC_SERVER_PUBLIC_KEY', 'server_public.pem'),
+            mode=RSAMode[mode],
         )
         await client.connect(rsa_tp)
     else:
