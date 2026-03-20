@@ -53,6 +53,9 @@ class BaseClient(object):
     prefix: str
     subfix: str
     transport: BaseTransport
+    _closing: bool
+    _reconnect_requested: bool
+    _reconnect_task: Optional[asyncio.Task[None]]
 
     def __init__(
         self,
@@ -79,6 +82,9 @@ class BaseClient(object):
         self._reader = None
         self._writer = None
         self._processes = []
+        self._closing = False
+        self._reconnect_requested = False
+        self._reconnect_task = None
 
         self.prefix = ''
         self.subfix = ''
@@ -115,6 +121,8 @@ class BaseClient(object):
         self.connected_evt = asyncio.Event()
         self.send_locker = asyncio.Lock()
         self.msgid_locker = asyncio.Lock()
+        self._closing = False
+        self._reconnect_requested = False
 
     def start_processes(self) -> None:
         # Create background tasks for message loop and health check
@@ -141,6 +149,8 @@ class BaseClient(object):
         reader, writer = await self.transport.get()
         self._writer = writer
         self._reader = reader
+        self._closing = False
+        self._reconnect_requested = False
 
         # Handshake: Send client type
         agent = Agent(self)
@@ -155,23 +165,28 @@ class BaseClient(object):
         return True
 
     def start_connect(self) -> None:
+        if self._reconnect_task and not self._reconnect_task.done():
+            return
 
         async def connect_loop() -> None:
-            delay = 1
-            not_connected = True
-            while not_connected:
-                try:
-                    logger.info('Reconnecting...')
-                    await self.connect()
-                    logger.info('Connected')
-                    not_connected = False
-                except Exception as e:
-                    logger.error(f'Reconnect failed: {e}')
+            try:
+                delay = 1
+                not_connected = True
+                while not_connected and not self._closing:
+                    try:
+                        logger.info('Reconnecting...')
+                        await self.connect()
+                        logger.info('Connected')
+                        not_connected = False
+                    except Exception as e:
+                        logger.error(f'Reconnect failed: {e}')
 
-                if not_connected:
-                    await asyncio.sleep(delay)
+                    if not_connected:
+                        await asyncio.sleep(delay)
+            finally:
+                self._reconnect_task = None
 
-        asyncio.create_task(connect_loop())
+        self._reconnect_task = asyncio.create_task(connect_loop())
 
     @property
     def connected(self) -> bool:
@@ -198,7 +213,7 @@ class BaseClient(object):
                 if reader is not None and hasattr(reader, 'feed_eof'):
                     reader.feed_eof()
                 # Alternatively, close writer to trigger reconnection
-                self.close()
+                self.close(reconnect=True)
                 continue
 
             try:
@@ -306,7 +321,11 @@ class BaseClient(object):
                     logger.error(f'on_disconnected error: {e}')
 
             # Trigger reconnection logic
-            self.start_connect()
+            reconnect = (not self._closing) or self._reconnect_requested
+            self._closing = False
+            self._reconnect_requested = False
+            if reconnect:
+                self.start_connect()
 
     async def send_command_and_receive(self,
                                        command: Command | bytes,
@@ -336,11 +355,17 @@ class BaseClient(object):
                                                       is_pong,
                                                       timeout=timeout))
 
-    def close(self) -> None:
+    def close(self, reconnect: bool = False) -> None:
+        self._closing = True
+        self._reconnect_requested = reconnect
         self.connected_evt.clear()
 
         if self._writer:
             self._writer.close()
+
+        if self._reconnect_task and not self._reconnect_task.done():
+            self._reconnect_task.cancel()
+            self._reconnect_task = None
 
         self.stop_processes()
 
