@@ -1,5 +1,6 @@
 from aio_periodic import Transport, Worker, RSATransport
 from aio_periodic.job import Job
+import logging
 from aio_periodic.types.utils import to_bytes
 import asyncio
 import os
@@ -51,4 +52,8 @@ async def main() -> None:
     await worker.work(10)
 
 
-asyncio.run(main())
+if __name__ == '__main__':
+    f0 = '%(levelname)s - %(message)s'
+    formatter = '[%(asctime)s] %(name)s {%(filename)s:%(lineno)d} ' + f0
+    logging.basicConfig(level=logging.INFO, format=formatter)
+    asyncio.run(main())

@@ -131,8 +131,14 @@ class Agent(object):
                 writer.write(packet)
                 await writer.drain()
             except Exception as e:
-                # Force a reconnect on write failure
+                # Mark disconnected and proactively kick reconnect loop on
+                # transport write failures.
                 self.client.connected_evt.clear()
+                if not self.client._closing:
+                    writer_obj = self.client._writer
+                    if writer_obj:
+                        writer_obj.close()
+                    self.client.start_connect()
                 raise e
 
     def _make_waiter(self) -> asyncio.Event:

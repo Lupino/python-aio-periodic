@@ -136,7 +136,12 @@ class BaseClient(object):
 
     async def connect(self, transport: Optional[BaseTransport] = None) -> bool:
         if self._initialized:
-            self.close()
+            # Reset current state before reconnecting, but keep an active
+            # reconnect loop alive if this connect() is invoked from it.
+            self.close(_cancel_reconnect_task=False)
+            # Ensure reconnect loop keeps retrying if this connect attempt
+            # fails before transport establishment.
+            self._closing = False
         else:
             if not transport:
                 raise Exception('Transport required for initial connection')
@@ -355,7 +360,11 @@ class BaseClient(object):
                                                       is_pong,
                                                       timeout=timeout))
 
-    def close(self, reconnect: bool = False) -> None:
+    def close(
+        self,
+        reconnect: bool = False,
+        _cancel_reconnect_task: bool = True,
+    ) -> None:
         self._closing = True
         self._reconnect_requested = reconnect
         self.connected_evt.clear()
@@ -363,7 +372,8 @@ class BaseClient(object):
         if self._writer:
             self._writer.close()
 
-        if self._reconnect_task and not self._reconnect_task.done():
+        if (_cancel_reconnect_task and self._reconnect_task
+                and not self._reconnect_task.done()):
             self._reconnect_task.cancel()
             self._reconnect_task = None
 
