@@ -66,6 +66,8 @@ RECV_DATA = b'\x1F'
 WORK_DATA = b'\x20'
 # 0x21 WC.JobAssigned
 JOB_ASSIGNED = b'\x21'
+# 0x22 WC.JobUnassigned
+JOB_UNASSIGNED = b'\x22'
 
 
 class Command(object):
@@ -199,3 +201,9 @@ class JobAssigned(Command):
 
     def __init__(self) -> None:
         super().__init__(JOB_ASSIGNED)
+
+
+class JobUnassigned(Command):
+
+    def __init__(self) -> None:
+        super().__init__(JOB_UNASSIGNED)

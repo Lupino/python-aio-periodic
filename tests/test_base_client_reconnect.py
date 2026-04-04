@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from aio_periodic.types.base_client import BaseClient
 from aio_periodic.worker import Worker
 from aio_periodic.transport import BaseTransport
+from aio_periodic.types.job import Job as JobPayload
 from aio_periodic.types.utils import MAGIC_RESPONSE, TYPE_CLIENT, encode_int32
 
 
@@ -177,6 +178,79 @@ class WorkerReconnectTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(self.transport.calls, 2)
         self.assertGreaterEqual(worker._add_func.await_count, 2)  # type: ignore[attr-defined]
         worker.close()
+
+
+class WorkerGrabLogicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_next_grab_skips_when_disconnected(self) -> None:
+        worker = Worker([])
+        worker.connected_evt.clear()
+
+        grab_agent = AsyncMock()
+        grab_agent.is_timeout.return_value = True
+        worker.grab_queue = asyncio.Queue()
+        await worker.grab_queue.put(grab_agent)
+        worker._pool = type('Pool', (), {'is_full': False})()
+
+        await asyncio.wait_for(worker.next_grab(), timeout=0.2)
+        grab_agent.safe_send.assert_not_awaited()
+
+    async def test_run_task_does_not_regrab_after_disconnect(self) -> None:
+        worker = Worker([])
+        worker.connected_evt.set()
+
+        msgid = b'\x00\x00\x00\x01'
+        grab_agent = AsyncMock()
+        worker.grab_agents[msgid] = grab_agent
+
+        async def fake_process(_: object) -> None:
+            worker.connected_evt.clear()
+
+        worker.process_job = fake_process  # type: ignore[method-assign]
+        payload = b'\x05' + bytes(JobPayload('echo', 'demo'))
+
+        await asyncio.wait_for(worker.run_task(payload, msgid), timeout=0.2)
+        grab_agent.send_assigned.assert_awaited_once()
+        grab_agent.safe_send.assert_not_awaited()
+
+    async def test_run_task_unexpected_error_reports_fail(self) -> None:
+        worker = Worker([])
+        worker.connected_evt.set()
+
+        msgid = b'\x00\x00\x00\x02'
+        grab_agent = AsyncMock()
+        worker.grab_agents[msgid] = grab_agent
+
+        async def boom(_: object) -> None:
+            raise RuntimeError('boom')
+
+        worker.process_job = boom  # type: ignore[method-assign]
+        worker.send_command_and_receive = AsyncMock(return_value=True)  # type: ignore[method-assign]
+        payload = b'\x05' + bytes(JobPayload('echo', 'demo'))
+
+        await asyncio.wait_for(worker.run_task(payload, msgid), timeout=0.2)
+
+        self.assertGreaterEqual(worker.send_command_and_receive.await_count, 1)  # type: ignore[attr-defined]
+        sent_cmd = worker.send_command_and_receive.await_args_list[0].args[0]  # type: ignore[attr-defined]
+        self.assertEqual(bytes(sent_cmd)[0:1], b'\x04')
+        grab_agent.send_assigned.assert_awaited_once()
+
+    async def test_message_callback_unassigns_when_pool_full(self) -> None:
+        worker = Worker([])
+        worker.next_grab = AsyncMock()  # type: ignore[method-assign]
+        worker.run_task = AsyncMock()  # type: ignore[method-assign]
+        msgid = b'\x00\x00\x00\x01'
+        grab_agent = AsyncMock()
+        worker.grab_agents[msgid] = grab_agent
+
+        pool = type('Pool', (), {})()
+        pool.is_full = True
+        pool.spawn_n = AsyncMock()
+        worker._pool = pool  # type: ignore[assignment]
+
+        await worker._message_callback(b'\x05payload', msgid)
+
+        grab_agent.send_unassigned.assert_awaited_once()
+        pool.spawn_n.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -3,6 +3,7 @@ import logging
 from time import time
 from typing import List, Dict, Any, Optional, Callable, cast
 from concurrent.futures import Executor
+from contextlib import suppress
 
 # Third-party imports
 from asyncio_pool import AioPool  # type: ignore
@@ -47,6 +48,10 @@ class GrabAgent(object):
     async def send_assigned(self) -> None:
         """Acknowledges that a job has been assigned."""
         await self.agent.send(cmd.JobAssigned())
+
+    async def send_unassigned(self) -> None:
+        """Rejects an assigned job so server can re-dispatch it."""
+        await self.agent.send(cmd.JobUnassigned())
 
 
 class Worker(BaseClient):
@@ -185,6 +190,9 @@ class Worker(BaseClient):
         Checks the grab queue. If the pool is not full, sends GrabJob requests
         for idle agents.
         """
+        if not self.connected:
+            return
+
         if self._pool.is_full:
             return
 
@@ -218,14 +226,36 @@ class Worker(BaseClient):
 
     async def _message_callback(self, payload: bytes, msgid: bytes) -> None:
         """Callback when the server assigns a job."""
+        agent = self.grab_agents.get(msgid)
+        if not agent:
+            logger.error(f'Grab agent not found for msgid={msgid!r}')
+            return
+
+        # Reject immediately when saturated, do not queue execution.
+        if self._pool.is_full:
+            try:
+                await agent.send_unassigned()
+            except Exception as e:
+                logger.exception(e)
+            return
+
         # Immediately try to grab next job while processing this one
         await self.next_grab()
-        # Spawn the task execution in the pool
-        self._pool.spawn_n(self.run_task(payload, msgid))
+
+        # Spawn the task execution in the pool.
+        try:
+            self._pool.spawn_n(self.run_task(payload, msgid))
+        except Exception as e:
+            logger.exception(e)
 
     async def run_task(self, payload: bytes, msgid: bytes) -> None:
         """Decodes the job payload and runs the processing logic."""
-        agent = self.grab_agents[msgid]
+        agent = self.grab_agents.get(msgid)
+        if not agent:
+            logger.error(f'Grab agent not found for msgid={msgid!r}')
+            return
+
+        job: Optional[Job] = None
         try:
             await agent.send_assigned()
             # Payload[0] is command, Payload[1:] is Job Handle/Args
@@ -233,9 +263,15 @@ class Worker(BaseClient):
             await self.process_job(job)
         except asyncio.CancelledError:
             pass
+        except Exception as e:
+            logger.exception(e)
+            if job and not job.finished:
+                with suppress(Exception):
+                    await job.fail()
         finally:
             # Re-queue agent for next grab
-            await agent.safe_send()
+            if self.connected:
+                await agent.safe_send()
 
     async def process_job(self, job: Job) -> None:
         """Determines logic for execution (locking, missing task, etc.)."""
