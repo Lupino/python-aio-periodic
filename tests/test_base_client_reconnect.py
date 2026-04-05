@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 from binascii import crc32
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from aio_periodic.types.base_client import BaseClient
 from aio_periodic.worker import Worker
@@ -251,6 +251,50 @@ class WorkerGrabLogicTests(unittest.IsolatedAsyncioTestCase):
 
         grab_agent.send_unassigned.assert_awaited_once()
         pool.spawn_n.assert_not_called()
+
+    async def test_message_callback_unassigns_when_stopping(self) -> None:
+        worker = Worker([])
+        worker.next_grab = AsyncMock()  # type: ignore[method-assign]
+        worker.run_task = AsyncMock()  # type: ignore[method-assign]
+        worker._stopping = True
+        msgid = b'\x00\x00\x00\x03'
+        grab_agent = AsyncMock()
+        worker.grab_agents[msgid] = grab_agent
+
+        pool = type('Pool', (), {})()
+        pool.is_full = False
+        pool.spawn_n = AsyncMock()
+        worker._pool = pool  # type: ignore[assignment]
+
+        await worker._message_callback(b'\x05payload', msgid)
+
+        grab_agent.send_unassigned.assert_awaited_once()
+        pool.spawn_n.assert_not_called()
+
+
+class WorkerGracefulShutdownTests(unittest.IsolatedAsyncioTestCase):
+    async def test_graceful_shutdown_sends_cant_do_waits_and_closes(self) -> None:
+        worker = Worker([])
+
+        async def task(_: object) -> bytes:
+            return b'ok'
+
+        worker._tasks = {'echo': task, 'echo_later': task}
+        worker.send_command_and_receive = AsyncMock(return_value=True)  # type: ignore[method-assign]
+        worker.close = Mock()  # type: ignore[method-assign]
+
+        pool = type('Pool', (), {})()
+        pool.join = AsyncMock()
+        worker._pool = pool  # type: ignore[assignment]
+
+        await worker.graceful_shutdown()
+
+        self.assertTrue(worker._stopping)
+        self.assertEqual(worker.send_command_and_receive.await_count, 2)  # type: ignore[attr-defined]
+        for call in worker.send_command_and_receive.await_args_list:  # type: ignore[attr-defined]
+            self.assertEqual(bytes(call.args[0])[0:1], b'\x08')
+        pool.join.assert_awaited_once()
+        worker.close.assert_called_once()
 
 
 if __name__ == '__main__':

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import signal
 from time import time
 from typing import List, Dict, Any, Optional, Callable, cast
 from concurrent.futures import Executor
@@ -63,6 +64,7 @@ class Worker(BaseClient):
     grab_queue: asyncio.Queue[GrabAgent]
     grab_agents: Dict[bytes, GrabAgent]
     executor: Optional[Executor]
+    _stopping: bool
 
     def __init__(self, enabled_tasks: Optional[List[str]] = None) -> None:
         BaseClient.__init__(self, TYPE_WORKER, self._message_callback,
@@ -78,6 +80,7 @@ class Worker(BaseClient):
         self.grab_agents = {}
         # Note: grab_queue and _pool are initialized in work()
         self.executor = None
+        self._stopping = False
 
     def set_enable_tasks(self, enabled_tasks: List[str]) -> None:
         self.enabled_tasks = enabled_tasks
@@ -175,8 +178,7 @@ class Worker(BaseClient):
     async def remove_func(self, func: str) -> bool:
         """Unregisters a task."""
         logger.info(f'Remove {func}')
-        r = await self.send_command_and_receive(
-            cmd.CantDo(self._add_prefix_subfix(func)), is_success)
+        r = await self._cant_do(func)
         self._tasks.pop(func, None)
         self.defrsps.pop(func, None)
         self.lockers.pop(func, None)
@@ -185,12 +187,23 @@ class Worker(BaseClient):
 
         return cast(bool, r)
 
+    async def _cant_do(self, func: str) -> bool:
+        """Sends CantDo to server without mutating local task registry."""
+        logger.info(f'CantDo {func}')
+        return cast(
+            bool, await self.send_command_and_receive(
+                cmd.CantDo(self._add_prefix_subfix(func)), is_success))
+
+    def stop(self) -> None:
+        """Stops the worker loop from requesting new jobs."""
+        self._stopping = True
+
     async def next_grab(self) -> None:
         """
         Checks the grab queue. If the pool is not full, sends GrabJob requests
         for idle agents.
         """
-        if not self.connected:
+        if not self.connected or self._stopping:
             return
 
         if self._pool.is_full:
@@ -209,6 +222,7 @@ class Worker(BaseClient):
 
     async def work(self, size: int) -> None:
         """Starts the worker loop with a specified concurrency size."""
+        self._stopping = False
         self._pool = AioPool(size=size)
         agents = [self.agent() for _ in range(size)]
         self.grab_queue = asyncio.Queue()
@@ -220,9 +234,79 @@ class Worker(BaseClient):
             self.grab_agents[agent.msgid] = item
 
         # Main worker loop
-        while True:
+        while not self._stopping:
             await self.next_grab()
             await asyncio.sleep(1)
+
+    async def graceful_shutdown(
+        self,
+        funcs: Optional[List[str]] = None,
+        close_client: bool = True,
+    ) -> None:
+        """
+        Graceful shutdown flow:
+        1) stop accepting new jobs
+        2) send CantDo for all functions
+        3) wait for in-flight jobs to finish
+        4) close network client
+        """
+        self.stop()
+
+        cant_do_funcs = funcs if funcs is not None else list(self._tasks.keys())
+        for func in cant_do_funcs:
+            try:
+                await self._cant_do(func)
+            except Exception as e:
+                logger.exception(e)
+
+        if hasattr(self, '_pool'):
+            await self._pool.join()
+
+        if close_client:
+            self.close()
+
+    async def work_until_shutdown(
+        self,
+        size: int,
+        signal_names: Optional[List[str]] = None,
+    ) -> None:
+        """
+        Runs work loop and installs graceful shutdown handlers for signals.
+        Default signals: SIGTERM and SIGHUP.
+        """
+        loop = asyncio.get_running_loop()
+        selected_signals = signal_names if signal_names else ['SIGTERM', 'SIGHUP']
+        shutdown_task = None
+
+        def start_shutdown(sig_name: str) -> None:
+            nonlocal shutdown_task
+            if shutdown_task is None:
+                logger.info(f'Received {sig_name}, graceful shutdown started')
+                shutdown_task = asyncio.create_task(self.graceful_shutdown())
+
+        registered_signals = []
+        for sig_name in selected_signals:
+            sig = getattr(signal, sig_name, None)
+            if sig is None:
+                continue
+            registered_signals.append(sig)
+            try:
+                loop.add_signal_handler(sig, lambda s=sig_name: start_shutdown(s))
+            except NotImplementedError:
+                signal.signal(
+                    sig,
+                    lambda *_, s=sig_name: loop.call_soon_threadsafe(start_shutdown, s),
+                )
+
+        try:
+            await self.work(size)
+        finally:
+            for sig in registered_signals:
+                with suppress(NotImplementedError):
+                    loop.remove_signal_handler(sig)
+
+        if shutdown_task:
+            await shutdown_task
 
     async def _message_callback(self, payload: bytes, msgid: bytes) -> None:
         """Callback when the server assigns a job."""
@@ -232,7 +316,7 @@ class Worker(BaseClient):
             return
 
         # Reject immediately when saturated, do not queue execution.
-        if self._pool.is_full:
+        if self._stopping or self._pool.is_full:
             try:
                 await agent.send_unassigned()
             except Exception as e:
@@ -270,7 +354,7 @@ class Worker(BaseClient):
                     await job.fail()
         finally:
             # Re-queue agent for next grab
-            if self.connected:
+            if self.connected and not self._stopping:
                 await agent.safe_send()
 
     async def process_job(self, job: Job) -> None:
@@ -398,6 +482,13 @@ class WorkerCluster(BaseCluster):
 
     async def work(self, size: int) -> None:
         await self.run('work', size)
+
+    async def graceful_shutdown(
+        self,
+        funcs: Optional[List[str]] = None,
+        close_client: bool = True,
+    ) -> None:
+        await self.run('graceful_shutdown', funcs, close_client)
 
     # Decorator
     def func(

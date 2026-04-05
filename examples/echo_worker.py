@@ -1,9 +1,9 @@
+import asyncio
+import logging
+import os
+
 from aio_periodic import Transport, Worker, RSATransport
 from aio_periodic.job import Job
-import logging
-from aio_periodic.types.utils import to_bytes
-import asyncio
-import os
 
 
 async def echo(job: Job) -> None:
@@ -49,7 +49,7 @@ async def main() -> None:
     await worker.add_func('echo', echo)
     await worker.add_func('echo_later', echo_later)
     await worker.add_func('test_lock', test_lock)
-    await worker.work(10)
+    await worker.work_until_shutdown(10)
 
 
 if __name__ == '__main__':
