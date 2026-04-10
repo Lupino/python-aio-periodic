@@ -252,7 +252,8 @@ class Worker(BaseClient):
         """
         self.stop()
 
-        cant_do_funcs = funcs if funcs is not None else list(self._tasks.keys())
+        def_funcs = list(self._tasks.keys())
+        cant_do_funcs = funcs if funcs is not None else def_funcs
         for func in cant_do_funcs:
             try:
                 await self._cant_do(func)
@@ -275,7 +276,8 @@ class Worker(BaseClient):
         Default signals: SIGTERM and SIGHUP.
         """
         loop = asyncio.get_running_loop()
-        selected_signals = signal_names if signal_names else ['SIGTERM', 'SIGHUP']
+        def_signal_names = ['SIGTERM', 'SIGHUP']
+        selected_signals = signal_names if signal_names else def_signal_names
         shutdown_task = None
 
         def start_shutdown(sig_name: str) -> None:
@@ -284,6 +286,20 @@ class Worker(BaseClient):
                 logger.info(f'Received {sig_name}, graceful shutdown started')
                 shutdown_task = asyncio.create_task(self.graceful_shutdown())
 
+        def mk_loop_signal_handler(sig_name: str) -> Callable[[], None]:
+            def handler() -> None:
+                start_shutdown(sig_name)
+
+            return handler
+
+        def mk_sync_signal_handler(
+            sig_name: str,
+        ) -> Callable[[int, Any], None]:
+            def handler(_signum: int, _frame: Any) -> None:
+                loop.call_soon_threadsafe(start_shutdown, sig_name)
+
+            return handler
+
         registered_signals = []
         for sig_name in selected_signals:
             sig = getattr(signal, sig_name, None)
@@ -291,12 +307,9 @@ class Worker(BaseClient):
                 continue
             registered_signals.append(sig)
             try:
-                loop.add_signal_handler(sig, lambda s=sig_name: start_shutdown(s))
+                loop.add_signal_handler(sig, mk_loop_signal_handler(sig_name))
             except NotImplementedError:
-                signal.signal(
-                    sig,
-                    lambda *_, s=sig_name: loop.call_soon_threadsafe(start_shutdown, s),
-                )
+                signal.signal(sig, mk_sync_signal_handler(sig_name))
 
         try:
             await self.work(size)
