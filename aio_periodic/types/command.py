@@ -105,11 +105,8 @@ class GrabJob(Command):
 class SchedLater(Command):
 
     def __init__(self, job_handle: bytes, delay: int, count: int = 0) -> None:
-        super().__init__((
-            SCHED_LATER, job_handle,
-            utils.encode_int64(delay),
-            utils.encode_int16(count)
-        ))
+        super().__init__((SCHED_LATER, job_handle, utils.encode_int64(delay),
+                          utils.encode_int16(count)))
 
 
 class WorkDone(Command):
@@ -184,11 +181,8 @@ class Acquire(Command):
 
     def __init__(self, name: utils.Encodable, count: int,
                  handle: bytes) -> None:
-        super().__init__((
-            ACQUIRE,
-            utils.encode_str8(name),
-            utils.encode_int16(count), handle
-        ))
+        super().__init__((ACQUIRE, utils.encode_str8(name),
+                          utils.encode_int16(count), handle))
 
 
 class Release(Command):

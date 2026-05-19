@@ -294,6 +294,7 @@ class Worker(BaseClient):
                 shutdown_task = asyncio.create_task(self.graceful_shutdown())
 
         def mk_loop_signal_handler(sig_name: str) -> Callable[[], None]:
+
             def handler() -> None:
                 start_shutdown(sig_name)
 
@@ -302,6 +303,7 @@ class Worker(BaseClient):
         def mk_sync_signal_handler(
             sig_name: str,
         ) -> Callable[[int, Optional[FrameType]], None]:
+
             def handler(_signum: int, _frame: Optional[FrameType]) -> None:
                 loop.call_soon_threadsafe(start_shutdown, sig_name)
 
@@ -529,7 +531,9 @@ class WorkerCluster(BaseCluster):
             defrsp = FailResponse()
 
         def _func(task: TaskFunc) -> TaskFunc:
-            def reduce(ret: bool, call: Callable[[TaskFunc], TaskFunc]) -> bool:
+
+            def reduce(ret: bool, call: Callable[[TaskFunc],
+                                                 TaskFunc]) -> bool:
                 call(task)
                 return ret
 

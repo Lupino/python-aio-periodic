@@ -421,15 +421,16 @@ class BaseClient(object):
         for agent in list(self.agents.values()):
             agent.feed_data(b'')
 
-    async def submit_job(self,
-                         func: str | bytes = '',
-                         name: str | bytes = '',
-                         workload: bytes = b'',
-                         sched_at: int = 0,
-                         count: int = 0,
-                         timeout: int = 0,
-                         job: Optional[Job] = None,
-                         ) -> bool:
+    async def submit_job(
+        self,
+        func: str | bytes = '',
+        name: str | bytes = '',
+        workload: bytes = b'',
+        sched_at: int = 0,
+        count: int = 0,
+        timeout: int = 0,
+        job: Optional[Job] = None,
+    ) -> bool:
         if job is None:
             job = Job(func, name, workload, sched_at, count, timeout)
 
@@ -437,16 +438,17 @@ class BaseClient(object):
         return await self.send_command_and_receive(cmd.SubmitJob(job),
                                                    is_success)
 
-    async def run_job(self,
-                      func: str | bytes = '',
-                      name: str | bytes = '',
-                      workload: bytes = b'',
-                      sched_at: int = 0,
-                      count: int = 0,
-                      timeout: int = 0,
-                      job: Optional[Job] = None,
-                      stream: Optional[RunJobStreamFunc] = None,
-                      ) -> bytes:
+    async def run_job(
+        self,
+        func: str | bytes = '',
+        name: str | bytes = '',
+        workload: bytes = b'',
+        sched_at: int = 0,
+        count: int = 0,
+        timeout: int = 0,
+        job: Optional[Job] = None,
+        stream: Optional[RunJobStreamFunc] = None,
+    ) -> bytes:
         if job is None:
             job = Job(func, name, workload, sched_at, count, timeout)
 
@@ -628,8 +630,8 @@ class BaseCluster(object):
         if reduce is None:
             last: Optional[RunRet] = None
             for client in self.clients:
-                method = cast(Callable[..., RunRet], getattr(client,
-                                                             method_name))
+                method = cast(Callable[..., RunRet],
+                              getattr(client, method_name))
                 last = method(*args, **kwargs)
             return last
 
@@ -667,31 +669,33 @@ class BaseCluster(object):
         """Close all server connections."""
         self.run_sync('close')
 
-    async def submit_job(self,
-                         func: str | bytes = '',
-                         name: str | bytes = '',
-                         workload: bytes = b'',
-                         sched_at: int = 0,
-                         count: int = 0,
-                         timeout: int = 0,
-                         job: Optional[Job] = None,
-                         ) -> bool:
+    async def submit_job(
+        self,
+        func: str | bytes = '',
+        name: str | bytes = '',
+        workload: bytes = b'',
+        sched_at: int = 0,
+        count: int = 0,
+        timeout: int = 0,
+        job: Optional[Job] = None,
+    ) -> bool:
         """Submit job to one server based on hashing."""
         if job is None:
             job = Job(func, name, workload, sched_at, count, timeout)
         client = self.get(to_str(job.name))
         return await client.submit_job(job=job)
 
-    async def run_job(self,
-                      func: str | bytes = '',
-                      name: str | bytes = '',
-                      workload: bytes = b'',
-                      sched_at: int = 0,
-                      count: int = 0,
-                      timeout: int = 0,
-                      job: Optional[Job] = None,
-                      stream: Optional[RunJobStreamFunc] = None,
-                      ) -> bytes:
+    async def run_job(
+        self,
+        func: str | bytes = '',
+        name: str | bytes = '',
+        workload: bytes = b'',
+        sched_at: int = 0,
+        count: int = 0,
+        timeout: int = 0,
+        job: Optional[Job] = None,
+        stream: Optional[RunJobStreamFunc] = None,
+    ) -> bytes:
         """Run job on one server based on hashing."""
         if job is None:
             job = Job(func, name, workload, sched_at, count, timeout)
