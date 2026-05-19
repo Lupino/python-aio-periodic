@@ -529,11 +529,17 @@ class WorkerCluster(BaseCluster):
             defrsp = FailResponse()
 
         def _func(task: TaskFunc) -> TaskFunc:
+            def reduce(ret: bool, call: Callable[[TaskFunc], TaskFunc]) -> bool:
+                call(task)
+                return ret
+
             self.run_sync('func',
                           func_name,
                           broadcast,
                           defrsp,
-                          locker)
+                          locker,
+                          reduce=reduce,
+                          initialize=True)
             return task
 
         return _func
