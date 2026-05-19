@@ -35,13 +35,16 @@ class Blueprint(object):
         self,
         func: str,
         task: TaskFunc,
-        defrsp: ResponseTypes = DoneResponse(),
+        defrsp: Optional[ResponseTypes] = None,
         locker: Optional[LockerFunc] = None,
     ) -> None:
         """
         Registers a task. If a worker is attached, registers directly on it.
         Otherwise, stores it locally in the blueprint.
         """
+        if defrsp is None:
+            defrsp = DoneResponse()
+
         if self.worker:
             await self.worker.add_func(func, task, defrsp, locker)
         else:
@@ -54,12 +57,15 @@ class Blueprint(object):
         self,
         func: str,
         task: TaskFunc,
-        defrsp: ResponseTypes = DoneResponse(),
+        defrsp: Optional[ResponseTypes] = None,
         locker: Optional[LockerFunc] = None,
     ) -> None:
         """
         Registers a broadcast task. These tasks are run on all workers.
         """
+        if defrsp is None:
+            defrsp = DoneResponse()
+
         if self.worker:
             await self.worker.broadcast(func, task, defrsp, locker)
         else:
@@ -84,7 +90,7 @@ class Blueprint(object):
         self,
         func_name: str,
         broadcast: bool = False,
-        defrsp: ResponseTypes = DoneResponse(),
+        defrsp: Optional[ResponseTypes] = None,
         locker: Optional[LockerFunc] = None,
     ) -> Callable[[TaskFunc], TaskFunc]:
         """
@@ -95,6 +101,9 @@ class Blueprint(object):
             def my_task_handler(job):
                 ...
         """
+
+        if defrsp is None:
+            defrsp = DoneResponse()
 
         def _func(task: TaskFunc) -> TaskFunc:
             self.tasks[func_name] = task

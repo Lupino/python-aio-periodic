@@ -1,5 +1,7 @@
 import json
-from typing import Any, Union
+from typing import Union
+
+from .types.utils import Encodable, JSONValue
 
 
 class DoneResponse:
@@ -7,9 +9,9 @@ class DoneResponse:
     Indicates that the job finished successfully.
     Optionally carries a payload (buf) back to the caller.
     """
-    buf: Any
+    buf: Encodable
 
-    def __init__(self, buf: Any = None) -> None:
+    def __init__(self, buf: Encodable = None) -> None:
         self.buf = buf
 
 
@@ -36,12 +38,12 @@ class SchedLaterResponse:
 ResponseTypes = Union[DoneResponse, FailResponse, SchedLaterResponse]
 
 
-def done(buf: Any = None) -> DoneResponse:
+def done(buf: Encodable = None) -> DoneResponse:
     """Helper to create a DoneResponse."""
     return DoneResponse(buf)
 
 
-def jsonify(data: Any) -> DoneResponse:
+def jsonify(data: JSONValue) -> DoneResponse:
     """Helper to create a DoneResponse with JSON-encoded data."""
     return DoneResponse(json.dumps(data).encode('utf-8'))
 

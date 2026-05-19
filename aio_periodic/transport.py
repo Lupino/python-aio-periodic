@@ -4,7 +4,7 @@ import hashlib
 import os
 import struct
 from enum import IntEnum
-from typing import Tuple
+from typing import Tuple, Union
 from functools import partial
 
 # Import cryptography components
@@ -99,9 +99,9 @@ class SecureStreamReader(asyncio.StreamReader):
                     return data
                 else:
                     available = min(len(self._decrypted_buffer), n)
-                    data = self._decrypted_buffer[:available]
+                    data = bytes(self._decrypted_buffer[:available])
                     del self._decrypted_buffer[:available]
-                    return bytes(data)
+                    return data
 
             # 2. If buffer is empty, fetch one new chunk
             # Note: We do not loop here; read() typically returns whatever is
@@ -212,7 +212,7 @@ class SecureStreamWriter(asyncio.StreamWriter):
         self._transport = writer.transport
         self._loop = asyncio.get_running_loop()
 
-    def write(self, data: bytes) -> None:
+    def write(self, data: Union[bytes, bytearray, memoryview]) -> None:
         if not data:
             return
 
@@ -220,9 +220,9 @@ class SecureStreamWriter(asyncio.StreamWriter):
             if self.mode == RSAMode.Plain:
                 self.writer.write(data)
             elif self.mode == RSAMode.RSA:
-                self._write_rsa(data)
+                self._write_rsa(bytes(data))
             elif self.mode == RSAMode.AES:
-                self._write_aes(data)
+                self._write_aes(bytes(data))
         except Exception as e:
             logger.error(f"Secure Write Error ({self.mode.name}): {e}")
             raise
@@ -281,12 +281,17 @@ class RSATransport(BaseTransport):
 
     def _load_keys(self, priv_path: str, pub_path: str) -> None:
         with open(priv_path, "rb") as f:
-            self.private_key = serialization.load_pem_private_key(
-                f.read(), password=None)  # type: ignore
+            private_key = serialization.load_pem_private_key(f.read(),
+                                                             password=None)
+            if not isinstance(private_key, RSAPrivateKey):
+                raise TypeError("Private key is not an RSA private key")
+            self.private_key = private_key
 
         with open(pub_path, "rb") as f:
-            self.server_public_key = serialization.load_pem_public_key(
-                f.read())  # type: ignore
+            public_key = serialization.load_pem_public_key(f.read())
+            if not isinstance(public_key, RSAPublicKey):
+                raise TypeError("Server key is not an RSA public key")
+            self.server_public_key = public_key
 
     def _get_fingerprint(self, key: RSAPublicKey) -> bytes:
         pub_bytes = key.public_bytes(encoding=serialization.Encoding.DER,

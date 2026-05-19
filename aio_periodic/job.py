@@ -3,12 +3,14 @@ from .types.job import Job as JobT
 from .types import command as cmd
 from .types.base_client import is_success
 import json
-from typing import Any, TYPE_CHECKING, Callable, cast, Coroutine
+from typing import TYPE_CHECKING, Callable, cast, Optional, Awaitable, \
+    TypeVar
+from .types.utils import Encodable, JSONValue
 
 if TYPE_CHECKING:
     from .worker import Worker
 
-WithLockTaskFunc = Callable[[], Coroutine[Any, Any, Any]]
+WithLockReturn = TypeVar('WithLockReturn')
 
 
 class FinishedError(Exception):
@@ -39,14 +41,14 @@ class Job(object):
         if auto_finished:
             self.finished = True
 
-    async def done(self, buf: Any = None) -> bool:
+    async def done(self, buf: Encodable = None) -> bool:
         self._check_finished()
         return cast(
             bool, await
             self.w.send_command_and_receive(cmd.WorkDone(self.job_handle, buf),
                                             is_success))
 
-    async def data(self, buf: Any = None) -> bool:
+    async def data(self, buf: Encodable = None) -> bool:
         self._check_finished(False)
         return cast(
             bool, await
@@ -89,8 +91,8 @@ class Job(object):
     async def with_lock(self,
                         name: str,
                         count: int,
-                        task: WithLockTaskFunc,
-                        release: bool = False) -> Any:
+                        task: Callable[[], Awaitable[WithLockReturn]],
+                        release: bool = False) -> Optional[WithLockReturn]:
         acquired = await self.acquire(name, count)
         if acquired:
             try:
@@ -122,5 +124,5 @@ class Job(object):
         return self.payload.workload
 
     @property
-    def workload_json(self) -> Any:
-        return json.loads(to_str(self.payload.workload))
+    def workload_json(self) -> JSONValue:
+        return cast(JSONValue, json.loads(to_str(self.payload.workload)))

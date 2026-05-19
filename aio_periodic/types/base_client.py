@@ -3,13 +3,13 @@ import logging
 from binascii import crc32
 from contextlib import suppress
 from time import time
-from typing import (Optional, Dict, List, Any, Callable, Coroutine, Union,
-                    cast, AsyncIterable)
+from typing import (Awaitable, Optional, Dict, List, Callable, Union, cast,
+                    AsyncIterable, TypeVar, Protocol, TypedDict, overload)
 from asyncio import StreamReader, StreamWriter
 
 # Internal imports
 from .agent import Agent
-from .utils import decode_int32, MAGIC_RESPONSE, encode_int32
+from .utils import decode_int32, MAGIC_RESPONSE, encode_int32, to_str
 from .command import PING, PONG, NO_JOB, JOB_ASSIGN, SUCCESS, Command
 from . import command as cmd
 from .job import Job
@@ -27,14 +27,33 @@ def is_success(payload: bytes) -> bool:
     return payload == SUCCESS
 
 
-OnConnectedFunc = Callable[[], Coroutine[Any, Any, None]]
-OnDisconnectedFunc = Callable[[], Coroutine[Any, Any, None]]
-MessageCallbackFunc = Callable[[bytes, bytes], Coroutine[Any, Any, None]]
-ParseFunc = Callable[[bytes], Any]
+class FuncStatus(TypedDict):
+    func_name: str
+    worker_count: int
+    job_count: int
+    processing: int
+    locked: int
+    sched_at: int
+
+
+StatusMap = Dict[str, FuncStatus]
+
+OnConnectedFunc = Callable[[], Awaitable[None]]
+OnDisconnectedFunc = Callable[[], Awaitable[None]]
+MessageCallbackFunc = Callable[[bytes, bytes], Awaitable[None]]
 
 SyncRunJobStreamFunc = Callable[[bytes], None]
-AsyncRunJobStreamFunc = Callable[[bytes], Coroutine[Any, Any, Any]]
+AsyncRunJobStreamFunc = Callable[[bytes], Awaitable[None]]
 RunJobStreamFunc = Union[SyncRunJobStreamFunc, AsyncRunJobStreamFunc]
+ParseRet = TypeVar('ParseRet')
+RunRet = TypeVar('RunRet')
+ReduceRet = TypeVar('ReduceRet')
+
+
+class HashRingLike(Protocol):
+
+    def __getitem__(self, key: str) -> 'BaseClient':
+        ...
 
 
 class BaseClient(object):
@@ -49,7 +68,7 @@ class BaseClient(object):
     _on_connected: Optional[OnConnectedFunc]
     _on_disconnected: Optional[OnDisconnectedFunc]
     agents: Dict[bytes, Agent]
-    _processes: List[asyncio.Task[Any]]
+    _processes: List[asyncio.Task[None]]
     prefix: str
     subfix: str
     transport: BaseTransport
@@ -332,10 +351,30 @@ class BaseClient(object):
             if reconnect:
                 self.start_connect()
 
-    async def send_command_and_receive(self,
-                                       command: Command | bytes,
-                                       parse: Optional[ParseFunc] = None,
-                                       timeout: int = 10) -> Any | bytes:
+    @overload
+    async def send_command_and_receive(
+        self,
+        command: Command | bytes,
+        parse: None = None,
+        timeout: int = 10,
+    ) -> bytes:
+        ...
+
+    @overload
+    async def send_command_and_receive(
+        self,
+        command: Command | bytes,
+        parse: Callable[[bytes], ParseRet],
+        timeout: int = 10,
+    ) -> ParseRet:
+        ...
+
+    async def send_command_and_receive(
+        self,
+        command: Command | bytes,
+        parse: Optional[Callable[[bytes], ParseRet]] = None,
+        timeout: int = 10,
+    ) -> ParseRet | bytes:
         async with self.agent(timeout) as agent:
             await agent.send(command)
             payload = await agent.receive()
@@ -355,10 +394,9 @@ class BaseClient(object):
         def is_pong(payload: bytes) -> bool:
             return payload == PONG
 
-        return cast(
-            bool, await self.send_command_and_receive(PING,
-                                                      is_pong,
-                                                      timeout=timeout))
+        return await self.send_command_and_receive(PING,
+                                                   is_pong,
+                                                   timeout=timeout)
 
     def close(
         self,
@@ -384,24 +422,33 @@ class BaseClient(object):
             agent.feed_data(b'')
 
     async def submit_job(self,
-                         *args: Any,
+                         func: str | bytes = '',
+                         name: str | bytes = '',
+                         workload: bytes = b'',
+                         sched_at: int = 0,
+                         count: int = 0,
+                         timeout: int = 0,
                          job: Optional[Job] = None,
-                         **kwargs: Any) -> bool:
+                         ) -> bool:
         if job is None:
-            job = Job(*args, **kwargs)
+            job = Job(func, name, workload, sched_at, count, timeout)
 
-        job.func = self._add_prefix_subfix(job.func)
-        return cast(
-            bool, await self.send_command_and_receive(cmd.SubmitJob(job),
-                                                      is_success))
+        job.func = self._add_prefix_subfix(to_str(job.func))
+        return await self.send_command_and_receive(cmd.SubmitJob(job),
+                                                   is_success)
 
     async def run_job(self,
-                      *args: Any,
+                      func: str | bytes = '',
+                      name: str | bytes = '',
+                      workload: bytes = b'',
+                      sched_at: int = 0,
+                      count: int = 0,
+                      timeout: int = 0,
                       job: Optional[Job] = None,
                       stream: Optional[RunJobStreamFunc] = None,
-                      **kwargs: Any) -> bytes:
+                      ) -> bytes:
         if job is None:
-            job = Job(*args, **kwargs)
+            job = Job(func, name, workload, sched_at, count, timeout)
 
         if job.timeout == 0:
             job.timeout = 10
@@ -418,8 +465,8 @@ class BaseClient(object):
         task: Optional[asyncio.Task[None]] = None
         if stream is not None:
             # Handle streaming response
-            func = job.func
-            name = job.name
+            func = to_str(job.func)
+            name = to_str(job.name)
             fut: asyncio.Future[bool] = asyncio.Future()
 
             async def do_stream_task() -> None:
@@ -432,7 +479,7 @@ class BaseClient(object):
             # Wait for stream setup if needed, but here we proceed to send cmd
             # Ideally we rely on the future 'fut' being set by recv loop
 
-        job.func = self._add_prefix_subfix(job.func)
+        job.func = self._add_prefix_subfix(to_str(job.func))
         rj = cmd.RunJob(job)
 
         try:
@@ -448,20 +495,19 @@ class BaseClient(object):
             with suppress(asyncio.CancelledError):
                 await task
 
-        return cast(bytes, ret)
+        return ret
 
-    async def remove_job(self, func: str, name: Any) -> bool:
+    async def remove_job(self, func: str, name: str | bytes) -> bool:
         func = self._add_prefix_subfix(func)
         command = cmd.RemoveJob(func, name)
-        return cast(bool, await
-                    self.send_command_and_receive(command, is_success))
+        return await self.send_command_and_receive(command, is_success)
 
-    async def status(self) -> Any:
+    async def status(self) -> StatusMap:
 
-        def parse(payload: bytes) -> Any:
+        def parse(payload: bytes) -> StatusMap:
             payload_s = str(payload, 'utf-8').strip()
             stats = payload_s.split('\n')
-            retval = {}
+            retval: StatusMap = {}
             for stat_s in stats:
                 stat_s = stat_s.strip()
                 if not stat_s:
@@ -481,9 +527,8 @@ class BaseClient(object):
 
     async def drop_func(self, func: str) -> bool:
         func = self._add_prefix_subfix(func)
-        return cast(
-            bool, await self.send_command_and_receive(cmd.DropFunc(func),
-                                                      is_success))
+        return await self.send_command_and_receive(cmd.DropFunc(func),
+                                                   is_success)
 
     async def recv_job_data(
         self,
@@ -493,7 +538,7 @@ class BaseClient(object):
         fut: Optional[asyncio.Future[bool]] = None,
     ) -> AsyncIterable[bytes]:
         job = Job(func, name)
-        job.func = self._add_prefix_subfix(job.func)
+        job.func = self._add_prefix_subfix(to_str(job.func))
 
         async with self.agent(timeout) as agent:
             await agent.send(cmd.RecvData(job))
@@ -520,17 +565,17 @@ class BaseClient(object):
 class BaseCluster(object):
     clients: List[BaseClient]
     entrypoints: List[str]
-    hr: Any  # HashRing type
+    hr: HashRingLike
 
     def __init__(
         self,
         clientclass: Callable[..., BaseClient],
         entrypoints: List[str],
-        *args: Any,
-        **kwargs: Any,
+        *args: object,
+        **kwargs: object,
     ) -> None:
         self.clients = []
-        nodes = {}
+        nodes: Dict[str, Dict[str, object]] = {}
 
         for entrypoint in entrypoints:
             client = clientclass(*args, **kwargs)
@@ -545,40 +590,63 @@ class BaseCluster(object):
 
     def get(self, name: str) -> BaseClient:
         """Get one client by hashring."""
-        return cast(BaseClient, self.hr[name])
+        return self.hr[name]
 
     async def run(self,
                   method_name: str,
-                  *args: Any,
-                  reduce: Optional[Callable[[Any, Any], Any]] = None,
-                  initialize: Optional[Any] = None,
-                  **kwargs: Any) -> Any:
-        retval = initialize
+                  *args: object,
+                  reduce: Optional[Callable[[ReduceRet, RunRet],
+                                            ReduceRet]] = None,
+                  initialize: Optional[ReduceRet] = None,
+                  **kwargs: object) -> ReduceRet | RunRet | None:
+        if reduce is None:
+            last: Optional[RunRet] = None
+            for client in self.clients:
+                method = cast(Callable[..., Awaitable[RunRet]],
+                              getattr(client, method_name))
+                last = await method(*args, **kwargs)
+            return last
+
+        if initialize is None:
+            raise ValueError('initialize is required when reduce is provided')
+
+        retval: ReduceRet = initialize
         for client in self.clients:
-            method = getattr(client, method_name)
+            method = cast(Callable[..., Awaitable[RunRet]],
+                          getattr(client, method_name))
             ret = await method(*args, **kwargs)
-            if reduce:
-                retval = reduce(retval, ret)
+            retval = reduce(retval, ret)
         return retval
 
     def run_sync(self,
                  method_name: str,
-                 *args: Any,
-                 reduce: Optional[Callable[[Any, Any], Any]] = None,
-                 initialize: Optional[Any] = None,
-                 **kwargs: Any) -> Any:
-        retval = initialize
+                 *args: object,
+                 reduce: Optional[Callable[[ReduceRet, RunRet],
+                                           ReduceRet]] = None,
+                 initialize: Optional[ReduceRet] = None,
+                 **kwargs: object) -> ReduceRet | RunRet | None:
+        if reduce is None:
+            last: Optional[RunRet] = None
+            for client in self.clients:
+                method = cast(Callable[..., RunRet], getattr(client,
+                                                             method_name))
+                last = method(*args, **kwargs)
+            return last
+
+        if initialize is None:
+            raise ValueError('initialize is required when reduce is provided')
+
+        retval: ReduceRet = initialize
         for client in self.clients:
-            method = getattr(client, method_name)
+            method = cast(Callable[..., RunRet], getattr(client, method_name))
             ret = method(*args, **kwargs)
-            if reduce:
-                retval = reduce(retval, ret)
+            retval = reduce(retval, ret)
         return retval
 
-    def set_on_connected(self, func: Any) -> None:
+    def set_on_connected(self, func: OnConnectedFunc) -> None:
         self.run_sync('set_on_connected', func)
 
-    def set_on_disconnected(self, func: Any) -> None:
+    def set_on_disconnected(self, func: OnDisconnectedFunc) -> None:
         self.run_sync('set_on_disconnected', func)
 
     def set_prefix(self, prefix: str) -> None:
@@ -600,24 +668,34 @@ class BaseCluster(object):
         self.run_sync('close')
 
     async def submit_job(self,
-                         *args: Any,
+                         func: str | bytes = '',
+                         name: str | bytes = '',
+                         workload: bytes = b'',
+                         sched_at: int = 0,
+                         count: int = 0,
+                         timeout: int = 0,
                          job: Optional[Job] = None,
-                         **kwargs: Any) -> bool:
+                         ) -> bool:
         """Submit job to one server based on hashing."""
         if job is None:
-            job = Job(*args, **kwargs)
-        client = self.get(job.name)
+            job = Job(func, name, workload, sched_at, count, timeout)
+        client = self.get(to_str(job.name))
         return await client.submit_job(job=job)
 
     async def run_job(self,
-                      *args: Any,
+                      func: str | bytes = '',
+                      name: str | bytes = '',
+                      workload: bytes = b'',
+                      sched_at: int = 0,
+                      count: int = 0,
+                      timeout: int = 0,
                       job: Optional[Job] = None,
                       stream: Optional[RunJobStreamFunc] = None,
-                      **kwargs: Any) -> bytes:
+                      ) -> bytes:
         """Run job on one server based on hashing."""
         if job is None:
-            job = Job(*args, **kwargs)
-        client = self.get(job.name)
+            job = Job(func, name, workload, sched_at, count, timeout)
+        client = self.get(to_str(job.name))
         return await client.run_job(job=job, stream=stream)
 
     async def recv_job_data(
@@ -641,10 +719,11 @@ class BaseCluster(object):
         """Drop func from all servers."""
         await self.run('drop_func', func)
 
-    async def status(self) -> Any:
+    async def status(self) -> StatusMap:
         """Get status from all servers and merge results."""
-
-        def reduce(stats: Any, stat: Any) -> Any:
+        stats: StatusMap = {}
+        for client in self.clients:
+            stat = await client.status()
             for func in stat.keys():
                 if not stats.get(func):
                     stats[func] = stat[func]
@@ -656,6 +735,4 @@ class BaseCluster(object):
                     s_ptr['processing'] += n_ptr['processing']
                     if s_ptr['sched_at'] > n_ptr['sched_at']:
                         s_ptr['sched_at'] = n_ptr['sched_at']
-            return stats
-
-        return await self.run('status', reduce=reduce, initialize={})
+        return stats

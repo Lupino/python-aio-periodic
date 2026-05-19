@@ -1,4 +1,4 @@
-from typing import Any, Union, List
+from typing import List, Tuple, Union
 from . import utils
 from .job import Job
 
@@ -74,8 +74,14 @@ class Command(object):
     """Base class for all network commands."""
     _payload: bytes
 
-    def __init__(self, payload: Union[bytes, str, List[Any]]) -> None:
-        if isinstance(payload, list):
+    _parts_type = (list, tuple)
+
+    def __init__(
+        self,
+        payload: Union[utils.Encodable, List[utils.Encodable],
+                       Tuple[utils.Encodable, ...]],
+    ) -> None:
+        if isinstance(payload, self._parts_type):
             self._payload = b''.join([utils.to_bytes(p) for p in payload])
         else:
             self._payload = utils.to_bytes(payload)
@@ -99,47 +105,51 @@ class GrabJob(Command):
 class SchedLater(Command):
 
     def __init__(self, job_handle: bytes, delay: int, count: int = 0) -> None:
-        super().__init__([
+        super().__init__((
             SCHED_LATER, job_handle,
             utils.encode_int64(delay),
             utils.encode_int16(count)
-        ])
+        ))
 
 
 class WorkDone(Command):
 
-    def __init__(self, job_handle: bytes, buf: Any = None) -> None:
-        super().__init__([WORK_DONE, job_handle, utils.to_bytes(buf)])
+    def __init__(
+        self,
+        job_handle: bytes,
+        buf: utils.Encodable = None,
+    ) -> None:
+        super().__init__((WORK_DONE, job_handle, utils.to_bytes(buf)))
 
 
 class WorkFail(Command):
 
     def __init__(self, job_handle: bytes) -> None:
-        super().__init__([WORK_FAIL, job_handle])
+        super().__init__((WORK_FAIL, job_handle))
 
 
 class CanDo(Command):
 
     def __init__(self, func: str) -> None:
-        super().__init__([CAN_DO, utils.encode_str8(func)])
+        super().__init__((CAN_DO, utils.encode_str8(func)))
 
 
 class Broadcast(Command):
 
     def __init__(self, func: str) -> None:
-        super().__init__([BROADCAST, utils.encode_str8(func)])
+        super().__init__((BROADCAST, utils.encode_str8(func)))
 
 
 class CantDo(Command):
 
     def __init__(self, func: str) -> None:
-        super().__init__([CANT_DO, utils.encode_str8(func)])
+        super().__init__((CANT_DO, utils.encode_str8(func)))
 
 
 class SubmitJob(Command):
 
     def __init__(self, job: Job) -> None:
-        super().__init__([SUBMIT_JOB, bytes(job)])
+        super().__init__((SUBMIT_JOB, bytes(job)))
 
 
 class Status(Command):
@@ -151,50 +161,56 @@ class Status(Command):
 class DropFunc(Command):
 
     def __init__(self, func: str) -> None:
-        super().__init__([DROP_FUNC, utils.encode_str8(func)])
+        super().__init__((DROP_FUNC, utils.encode_str8(func)))
 
 
 class RemoveJob(Command):
 
-    def __init__(self, func: str, name: Any) -> None:
-        super().__init__(
-            [REMOVE_JOB,
-             utils.encode_str8(func),
-             utils.encode_str8(name)])
+    def __init__(self, func: str, name: utils.Encodable) -> None:
+        super().__init__((
+            REMOVE_JOB,
+            utils.encode_str8(func),
+            utils.encode_str8(name),
+        ))
 
 
 class RunJob(Command):
 
     def __init__(self, job: Job) -> None:
-        super().__init__([RUN_JOB, bytes(job)])
+        super().__init__((RUN_JOB, bytes(job)))
 
 
 class Acquire(Command):
 
-    def __init__(self, name: Any, count: int, handle: Any) -> None:
-        super().__init__([
+    def __init__(self, name: utils.Encodable, count: int,
+                 handle: bytes) -> None:
+        super().__init__((
             ACQUIRE,
             utils.encode_str8(name),
             utils.encode_int16(count), handle
-        ])
+        ))
 
 
 class Release(Command):
 
-    def __init__(self, name: Any, handle: Any) -> None:
-        super().__init__([RELEASE, utils.encode_str8(name), handle])
+    def __init__(self, name: utils.Encodable, handle: bytes) -> None:
+        super().__init__((RELEASE, utils.encode_str8(name), handle))
 
 
 class RecvData(Command):
 
     def __init__(self, job: Job) -> None:
-        super().__init__([RECV_DATA, bytes(job)])
+        super().__init__((RECV_DATA, bytes(job)))
 
 
 class WorkData(Command):
 
-    def __init__(self, job_handle: bytes, buf: Any = None) -> None:
-        super().__init__([WORK_DATA, job_handle, utils.to_bytes(buf)])
+    def __init__(
+        self,
+        job_handle: bytes,
+        buf: utils.Encodable = None,
+    ) -> None:
+        super().__init__((WORK_DATA, job_handle, utils.to_bytes(buf)))
 
 
 class JobAssigned(Command):

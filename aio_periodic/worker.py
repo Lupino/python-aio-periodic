@@ -2,9 +2,10 @@ import asyncio
 import logging
 import signal
 from time import time
-from typing import List, Dict, Any, Optional, Callable, cast
+from typing import List, Dict, Optional, Callable, cast
 from concurrent.futures import Executor
 from contextlib import suppress
+from types import FrameType
 
 # Third-party imports
 from asyncio_pool import AioPool  # type: ignore
@@ -132,10 +133,13 @@ class Worker(BaseClient):
         self,
         func: str,
         task: TaskFunc,
-        defrsp: ResponseTypes = FailResponse(),
+        defrsp: Optional[ResponseTypes] = None,
         locker: Optional[LockerFunc] = None,
     ) -> bool:
         """Registers a new task/function."""
+        if defrsp is None:
+            defrsp = FailResponse()
+
         r = False
         if self.connected:
             r = await self._add_func(func)
@@ -159,10 +163,13 @@ class Worker(BaseClient):
         self,
         func: str,
         task: TaskFunc,
-        defrsp: ResponseTypes = FailResponse(),
+        defrsp: Optional[ResponseTypes] = None,
         locker: Optional[LockerFunc] = None,
     ) -> bool:
         """Registers a broadcast task (runs on all workers)."""
+        if defrsp is None:
+            defrsp = FailResponse()
+
         r = False
         if self.connected:
             r = await self._broadcast(func)
@@ -294,8 +301,8 @@ class Worker(BaseClient):
 
         def mk_sync_signal_handler(
             sig_name: str,
-        ) -> Callable[[int, Any], None]:
-            def handler(_signum: int, _frame: Any) -> None:
+        ) -> Callable[[int, Optional[FrameType]], None]:
+            def handler(_signum: int, _frame: Optional[FrameType]) -> None:
                 loop.call_soon_threadsafe(start_shutdown, sig_name)
 
             return handler
@@ -424,10 +431,12 @@ class Worker(BaseClient):
         self,
         func_name: str,
         broadcast: bool = False,
-        defrsp: ResponseTypes = FailResponse(),
+        defrsp: Optional[ResponseTypes] = None,
         locker: Optional[LockerFunc] = None,
     ) -> Callable[[TaskFunc], TaskFunc]:
         """Decorator to register a function."""
+        if defrsp is None:
+            defrsp = FailResponse()
 
         def _func(task: TaskFunc) -> TaskFunc:
             self._tasks[func_name] = task
@@ -457,8 +466,13 @@ class WorkerCluster(BaseCluster):
     multiple Periodic servers.
     """
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        BaseCluster.__init__(self, Worker, *args, **kwargs)
+    def __init__(self,
+                 entrypoints: List[str],
+                 enabled_tasks: Optional[List[str]] = None) -> None:
+        BaseCluster.__init__(self,
+                             Worker,
+                             entrypoints,
+                             enabled_tasks=enabled_tasks)
 
     def set_enable_tasks(self, enabled_tasks: List[str]) -> None:
         self.run_sync('set_enable_tasks', enabled_tasks)
@@ -476,7 +490,7 @@ class WorkerCluster(BaseCluster):
         self,
         func: str,
         task: TaskFunc,
-        defrsp: ResponseTypes = FailResponse(),
+        defrsp: Optional[ResponseTypes] = None,
         locker: Optional[LockerFunc] = None,
     ) -> None:
         await self.run('add_func', func, task, defrsp, locker)
@@ -485,7 +499,7 @@ class WorkerCluster(BaseCluster):
         self,
         func: str,
         task: TaskFunc,
-        defrsp: ResponseTypes = FailResponse(),
+        defrsp: Optional[ResponseTypes] = None,
         locker: Optional[LockerFunc] = None,
     ) -> None:
         await self.run('broadcast', func, task, defrsp, locker)
@@ -508,21 +522,18 @@ class WorkerCluster(BaseCluster):
         self,
         func_name: str,
         broadcast: bool = False,
-        defrsp: ResponseTypes = FailResponse(),
+        defrsp: Optional[ResponseTypes] = None,
         locker: Optional[LockerFunc] = None,
     ) -> Callable[[TaskFunc], TaskFunc]:
+        if defrsp is None:
+            defrsp = FailResponse()
 
         def _func(task: TaskFunc) -> TaskFunc:
-
-            def reduce(_: Any, call: Any) -> None:
-                call(task)
-
             self.run_sync('func',
                           func_name,
                           broadcast,
                           defrsp,
-                          locker,
-                          reduce=reduce)
+                          locker)
             return task
 
         return _func

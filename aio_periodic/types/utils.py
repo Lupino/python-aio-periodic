@@ -1,6 +1,6 @@
 import struct
 import json
-from typing import Any, cast
+from typing import Dict, List, Union, cast
 
 MAGIC_REQUEST = b'\x00REQ'
 MAGIC_RESPONSE = b'\x00RES'
@@ -9,42 +9,56 @@ MAGIC_RESPONSE = b'\x00RES'
 TYPE_CLIENT = b'\x01'
 TYPE_WORKER = b'\x02'
 
+# JSON-compatible payload types for safe serialization boundaries.
+JSONScalar = Union[str, int, float, bool, None]
+JSONValue = Union[JSONScalar, Dict[str, 'JSONValue'], List['JSONValue']]
 
-def to_bytes(s: Any) -> bytes:
-    """Convert input (str, dict, list, int, etc.) to bytes."""
+# Values accepted by protocol encoders.
+BytesLike = Union[bytes, bytearray, memoryview]
+Encodable = Union[BytesLike, str, JSONValue]
+
+
+def to_bytes(s: Encodable) -> bytes:
+    """Convert protocol payload values to bytes."""
     if isinstance(s, bytes):
         return s
+    if isinstance(s, bytearray):
+        return bytes(s)
+    if isinstance(s, memoryview):
+        return s.tobytes()
     elif isinstance(s, str):
         return s.encode('utf-8')
     elif isinstance(s, (dict, list)):
         return json.dumps(s).encode('utf-8')
     elif s is None:
         return b''
-    else:
-        return str(s).encode('utf-8')
+    return str(s).encode('utf-8')
 
 
-def to_str(s: Any) -> str:
-    """Convert input to string."""
+def to_str(s: Encodable) -> str:
+    """Convert protocol payload values to string."""
     if isinstance(s, bytes):
         return s.decode('utf-8')
+    if isinstance(s, bytearray):
+        return bytes(s).decode('utf-8')
+    if isinstance(s, memoryview):
+        return s.tobytes().decode('utf-8')
     elif isinstance(s, str):
         return s
     elif isinstance(s, (dict, list)):
         return json.dumps(s)
     elif s is None:
         return ''
-    else:
-        return str(s)
+    return str(s)
 
 
-def encode_str8(data: Any) -> bytes:
+def encode_str8(data: Encodable) -> bytes:
     """Encode data with a 1-byte length prefix."""
     b_data = to_bytes(data)
     return encode_int8(len(b_data)) + b_data
 
 
-def encode_str32(data: Any) -> bytes:
+def encode_str32(data: Encodable) -> bytes:
     """Encode data with a 4-byte length prefix."""
     b_data = to_bytes(data)
     return encode_int32(len(b_data)) + b_data

@@ -3,7 +3,7 @@ import unittest
 from binascii import crc32
 from unittest.mock import AsyncMock, Mock
 
-from aio_periodic.types.base_client import BaseClient
+from aio_periodic.types.base_client import BaseClient, BaseCluster, StatusMap
 from aio_periodic.worker import Worker
 from aio_periodic.transport import BaseTransport
 from aio_periodic.types.job import Job as JobPayload
@@ -295,6 +295,79 @@ class WorkerGracefulShutdownTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(bytes(call.args[0])[0:1], b'\x08')
         pool.join.assert_awaited_once()
         worker.close.assert_called_once()
+
+
+class BaseClientStatusTests(unittest.IsolatedAsyncioTestCase):
+    async def test_status_parses_payload_to_typed_map(self) -> None:
+        client = BaseClient(TYPE_CLIENT)
+        payload = (
+            b"echo,2,3,1,0,100\n"
+            b"task,1,4,2,1,90\n"
+        )
+
+        async def fake_send(command: object, parse: object, timeout: int = 10
+                            ) -> StatusMap:
+            del command, timeout
+            parser = parse
+            assert callable(parser)
+            return parser(payload)
+
+        client.send_command_and_receive = fake_send  # type: ignore[method-assign]
+        stats = await client.status()
+
+        self.assertEqual(set(stats.keys()), {"echo", "task"})
+        self.assertEqual(stats["echo"]["worker_count"], 2)
+        self.assertEqual(stats["echo"]["job_count"], 3)
+        self.assertEqual(stats["echo"]["processing"], 1)
+        self.assertEqual(stats["echo"]["locked"], 0)
+        self.assertEqual(stats["echo"]["sched_at"], 100)
+
+    async def test_cluster_status_merges_counts_and_min_sched_at(self) -> None:
+        class StubClient:
+            def __init__(self, stats: StatusMap) -> None:
+                self._stats = stats
+
+            async def status(self) -> StatusMap:
+                return self._stats
+
+        cluster = BaseCluster.__new__(BaseCluster)
+        cluster.clients = [
+            StubClient({
+                "echo": {
+                    "func_name": "echo",
+                    "worker_count": 2,
+                    "job_count": 3,
+                    "processing": 1,
+                    "locked": 0,
+                    "sched_at": 100,
+                },
+                "task": {
+                    "func_name": "task",
+                    "worker_count": 1,
+                    "job_count": 1,
+                    "processing": 0,
+                    "locked": 0,
+                    "sched_at": 80,
+                },
+            }),
+            StubClient({
+                "echo": {
+                    "func_name": "echo",
+                    "worker_count": 3,
+                    "job_count": 2,
+                    "processing": 2,
+                    "locked": 1,
+                    "sched_at": 70,
+                },
+            }),
+        ]
+
+        merged = await cluster.status()
+        self.assertEqual(merged["echo"]["worker_count"], 5)
+        self.assertEqual(merged["echo"]["job_count"], 5)
+        self.assertEqual(merged["echo"]["processing"], 3)
+        self.assertEqual(merged["echo"]["sched_at"], 70)
+        self.assertEqual(merged["task"]["worker_count"], 1)
 
 
 if __name__ == '__main__':

@@ -1,11 +1,11 @@
 import asyncio
 from time import time
-from typing import Any, Callable, Coroutine, Optional
+from typing import AsyncIterator, Awaitable, Callable, Optional
 from contextlib import asynccontextmanager
 from .types.base_client import BaseClient
 
 # Type alias for the initialization function
-InitFunc = Callable[[], Coroutine[Any, Any, BaseClient]]
+InitFunc = Callable[[], Awaitable[BaseClient]]
 
 
 class Pool(object):
@@ -81,7 +81,7 @@ class Pool(object):
         self._sem.release()
 
     @asynccontextmanager
-    async def connection(self) -> Any:
+    async def connection(self) -> AsyncIterator[BaseClient]:
         """
         Context manager for safe client acquisition and release.
         Usage:

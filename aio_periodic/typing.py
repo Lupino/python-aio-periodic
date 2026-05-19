@@ -1,8 +1,11 @@
 from .job import Job
-from typing import Any, Callable, Coroutine, Union, Tuple
+from typing import Awaitable, Callable, Tuple, Union
+from .rsp import ResponseTypes
+from .types.utils import Encodable
 
 # Type Aliases for cleaner signatures
-SyncTaskFunc = Callable[[Job], Any]
-ASyncTaskFunc = Callable[[Job], Coroutine[Any, Any, Any]]
+TaskResult = Union[ResponseTypes, Encodable]
+SyncTaskFunc = Callable[[Job], TaskResult]
+ASyncTaskFunc = Callable[[Job], Awaitable[TaskResult]]
 TaskFunc = Union[ASyncTaskFunc, SyncTaskFunc]
 LockerFunc = Callable[[Job], Tuple[str, int]]

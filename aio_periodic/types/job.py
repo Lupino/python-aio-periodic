@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Union
 from .utils import (encode_str8, encode_str32, encode_int32, encode_int64,
                     decode_int8, decode_int32, decode_int64, encode_int8)
 
@@ -8,16 +8,16 @@ class Job(object):
     Represents a Job payload for the periodic system.
     Handles serialization (pack) and deserialization (build).
     """
-    func: Any
-    name: Any
+    func: Union[str, bytes]
+    name: Union[str, bytes]
     workload: bytes
     sched_at: int
     count: int
     timeout: int
 
     def __init__(self,
-                 func: Any,
-                 name: Any,
+                 func: Union[str, bytes],
+                 name: Union[str, bytes],
                  workload: bytes = b'',
                  sched_at: int = 0,
                  count: int = 0,

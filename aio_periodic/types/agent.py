@@ -1,7 +1,7 @@
 import asyncio
 from binascii import crc32
 from collections import deque
-from typing import Any, Deque, TYPE_CHECKING, Union
+from typing import Deque, TYPE_CHECKING, Union, Optional, Type
 
 from .utils import MAGIC_REQUEST, encode_int32, to_bytes
 from .command import Command
@@ -45,7 +45,12 @@ class Agent(object):
         self.client.agents[self.msgid] = self
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: object,
+    ) -> None:
         """Unregisters the agent to prevent memory leaks."""
         if self.msgid:
             self.client.agents.pop(self.msgid, None)
@@ -58,8 +63,12 @@ class Agent(object):
         async with self.client.msgid_locker:
             return self.__enter__()
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any,
-                        exc_tb: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: object,
+    ) -> None:
         async with self.client.msgid_locker:
             self.__exit__(exc_type, exc_val, exc_tb)
 
