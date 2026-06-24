@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import logging
 import hashlib
 import os
@@ -20,8 +21,13 @@ logger = logging.getLogger('aio_periodic.transport')
 # Constants matching Haskell configuration
 AES_KEY_SIZE = 32
 AES_IV_SIZE = 16
+AES_TAG_SIZE = 32
 OAEP_OVERHEAD = 66
-MAX_PACKET_SIZE = 100 * 1024 * 1024  # Safety: Max packet size 100MB
+HANDSHAKE_NONCE_SIZE = 16
+FINGERPRINT_SIZE = 32
+MAX_PACKET_SIZE = 64 * 1024 * 1024
+SERVER_PROOF_DOMAIN = b"metro-rsa-server-v1"
+CLIENT_PROOF_DOMAIN = b"metro-rsa-client-v1"
 
 
 class RSAMode(IntEnum):
@@ -172,7 +178,7 @@ class SecureStreamReader(asyncio.StreamReader):
         len_bytes = await self.reader.readexactly(8)
         pkt_len = struct.unpack('>Q', len_bytes)[0]
 
-        if pkt_len > MAX_PACKET_SIZE:
+        if pkt_len < AES_IV_SIZE + AES_TAG_SIZE or pkt_len > MAX_PACKET_SIZE:
             raise ValueError(f"Packet length {pkt_len} exceeds max allowed.")
 
         # 2. Read Payload (IV + Ciphertext)
@@ -180,7 +186,12 @@ class SecureStreamReader(asyncio.StreamReader):
 
         mv = memoryview(payload)
         iv = mv[:AES_IV_SIZE].tobytes()
-        ciphertext = mv[AES_IV_SIZE:].tobytes()
+        ciphertext = mv[AES_IV_SIZE:-AES_TAG_SIZE].tobytes()
+        tag = mv[-AES_TAG_SIZE:].tobytes()
+        expected_tag = hmac.new(self.session_key, iv + ciphertext,
+                                hashlib.sha256).digest()
+        if not hmac.compare_digest(tag, expected_tag):
+            raise ValueError("Invalid AES packet authentication tag")
 
         # 3. Decrypt
         def _decrypt_sync() -> bytes:
@@ -245,13 +256,18 @@ class SecureStreamWriter(asyncio.StreamWriter):
                         backend=default_backend())
         encryptor = cipher.encryptor()
         ciphertext = encryptor.update(data) + encryptor.finalize()
+        tag = hmac.new(self.session_key, iv + ciphertext,
+                       hashlib.sha256).digest()
 
-        payload_len = len(iv) + len(ciphertext)
+        payload_len = len(iv) + len(ciphertext) + len(tag)
+        if payload_len > MAX_PACKET_SIZE:
+            raise ValueError("AES packet length exceeds maximum")
         len_header = struct.pack('>Q', payload_len)
 
         self.writer.write(len_header)
         self.writer.write(iv)
         self.writer.write(ciphertext)
+        self.writer.write(tag)
 
     async def drain(self) -> None:
         await self.writer.drain()
@@ -332,18 +348,25 @@ class RSATransport(BaseTransport):
         raw_reader, raw_writer = await self.transport.get()
 
         try:
-            # 1. Send our public key fingerprint
             my_pub = self.private_key.public_key()
             my_fp = self._get_fingerprint(my_pub)
-            await self._send_oaep(raw_writer, my_fp)
+            nonce = os.urandom(HANDSHAKE_NONCE_SIZE)
+            await self._send_oaep(raw_writer, my_fp + nonce)
 
-            # 2. Receive Server's fingerprint verification
             server_fp_incoming = await self._recv_oaep(raw_reader)
-
-            # 3. Verify Server Identity
+            server_proof = await self._recv_oaep(raw_reader)
+            server_challenge = await self._recv_oaep(raw_reader)
             expected_server_fp = self._get_fingerprint(self.server_public_key)
             if server_fp_incoming != expected_server_fp:
                 raise ConnectionError("Server fingerprint mismatch!")
+            expected_proof = hashlib.sha256(SERVER_PROOF_DOMAIN + nonce +
+                                            server_fp_incoming).digest()
+            if not hmac.compare_digest(server_proof, expected_proof):
+                raise ConnectionError("Server proof mismatch!")
+
+            client_proof = hashlib.sha256(CLIENT_PROOF_DOMAIN +
+                                          server_challenge + my_fp).digest()
+            await self._send_oaep(raw_writer, client_proof)
 
             logger.info("RSA Handshake successful. Server verified.")
 
