@@ -70,3 +70,81 @@ jobs:
           docker logs periodicd || true
           docker rm -f periodicd || true
           cat worker.log || true
+
+  run-auth-examples:
+    runs-on: ubuntu-latest
+    env:
+      PERIODIC_MODE: Normal
+      PERIODIC_CLIENT_NAME: client-a
+      PERIODIC_CLIENT_TOKEN: token-client-a
+      PERIODIC_WORKER_NAME: worker-a
+      PERIODIC_WORKER_TOKEN: token-worker-a
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install package
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e .
+
+      - name: Pull periodicd
+        run: docker pull lupino/periodicd:1.2.9.0
+
+      - name: Write auth file
+        run: |
+          cat > periodic-auth.txt <<EOF
+          client client-a token-client-a echo,echo2,echo_later,test_lock
+          worker worker-a token-worker-a echo,echo_later,test_lock
+          EOF
+
+      - name: Start periodicd (tcp :5000)
+        run: |
+          docker run -d --name periodicd -p 5000:5000 \
+            -v "$PWD/periodic-auth.txt:/keys/periodic-auth.txt:ro" \
+            lupino/periodicd:1.2.9.0 \
+            --auth-file /keys/periodic-auth.txt
+
+          for i in $(seq 1 50); do
+            (echo > /dev/tcp/127.0.0.1/5000) >/dev/null 2>&1 && break
+            sleep 0.2
+          done
+          (echo > /dev/tcp/127.0.0.1/5000)
+
+      - name: Run echo worker (service)
+        run: |
+          python examples/echo_worker.py > worker.log 2>&1 &
+          echo $! > worker.pid
+
+      - name: Wait for worker registered funcs
+        run: |
+          for i in $(seq 1 50); do
+            docker exec periodicd periodic \
+              --client-name "$PERIODIC_CLIENT_NAME" \
+              --client-token "$PERIODIC_CLIENT_TOKEN" \
+              status | grep -E "\b(echo|echo_later|test_lock)\b" && exit 0
+            sleep 0.2
+          done
+
+          echo "Timed out waiting for worker to register funcs" >&2
+          docker exec periodicd periodic \
+            --client-name "$PERIODIC_CLIENT_NAME" \
+            --client-token "$PERIODIC_CLIENT_TOKEN" \
+            status || true
+          exit 1
+
+      - name: Run echo client
+        run: |
+          python examples/echo_client.py
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f worker.pid ]; then kill "$(cat worker.pid)" || true; fi
+          docker logs periodicd || true
+          docker rm -f periodicd || true
+          cat worker.log || true

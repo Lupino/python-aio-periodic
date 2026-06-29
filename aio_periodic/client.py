@@ -16,13 +16,15 @@ class Client(BaseClient):
         message_callback: Optional[MessageCallbackFunc] = None,
         on_connected: Optional[OnConnectedFunc] = None,
         on_disconnected: Optional[OnDisconnectedFunc] = None,
+        client_name: Optional[str] = None,
+        client_token: Optional[str] = None,
     ) -> None:
         """
         Initialize the Client.
         Passes extra arguments (like callbacks) to the BaseClient.
         """
         super().__init__(TYPE_CLIENT, message_callback, on_connected,
-                         on_disconnected)
+                         on_disconnected, client_name, client_token)
 
 
 class ClientCluster(BaseCluster):
@@ -37,9 +39,13 @@ class ClientCluster(BaseCluster):
         message_callback: Optional[MessageCallbackFunc] = None,
         on_connected: Optional[OnConnectedFunc] = None,
         on_disconnected: Optional[OnDisconnectedFunc] = None,
+        client_name: Optional[str] = None,
+        client_token: Optional[str] = None,
     ) -> None:
         super().__init__(Client,
                          entrypoints,
                          message_callback=message_callback,
                          on_connected=on_connected,
-                         on_disconnected=on_disconnected)
+                         on_disconnected=on_disconnected,
+                         client_name=client_name,
+                         client_token=client_token)

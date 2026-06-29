@@ -9,7 +9,8 @@ from asyncio import StreamReader, StreamWriter
 
 # Internal imports
 from .agent import Agent
-from .utils import decode_int32, MAGIC_RESPONSE, encode_int32, to_str
+from .utils import (decode_int32, MAGIC_RESPONSE, encode_int32, to_str,
+                    build_client_registration)
 from .command import PING, PONG, NO_JOB, JOB_ASSIGN, SUCCESS, Command
 from . import command as cmd
 from .job import Job
@@ -82,9 +83,12 @@ class BaseClient(object):
         message_callback: Optional[MessageCallbackFunc] = None,
         on_connected: Optional[OnConnectedFunc] = None,
         on_disconnected: Optional[OnDisconnectedFunc] = None,
+        client_name: Optional[str] = None,
+        client_token: Optional[str] = None,
     ):
         self.connid = None
-        self._clientType = clientType
+        self._clientType = build_client_registration(clientType, client_name,
+                                                     client_token)
         self.agents = {}
         self._last_msgid = 0
 

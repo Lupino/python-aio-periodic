@@ -7,7 +7,9 @@ from aio_periodic.types.base_client import BaseClient, BaseCluster, StatusMap
 from aio_periodic.worker import Worker
 from aio_periodic.transport import BaseTransport
 from aio_periodic.types.job import Job as JobPayload
-from aio_periodic.types.utils import MAGIC_RESPONSE, TYPE_CLIENT, encode_int32
+from aio_periodic.types.utils import (MAGIC_RESPONSE, TYPE_CLIENT,
+                                      TYPE_WORKER, build_client_registration,
+                                      encode_int32)
 
 
 class FakeWriter:
@@ -151,6 +153,24 @@ class BaseClientReconnectTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(transport.calls, 2)
         self.assertTrue(client.connected)
         client.close()
+
+
+class ClientRegistrationTests(unittest.TestCase):
+    def test_build_client_registration(self) -> None:
+        self.assertEqual(build_client_registration(TYPE_CLIENT).hex(), '01')
+        self.assertEqual(build_client_registration(TYPE_WORKER).hex(), '02')
+        self.assertEqual(
+            build_client_registration(TYPE_CLIENT, 'abc', 'def').hex(),
+            '0300000000000000036162630000000000000003646566',
+        )
+        self.assertEqual(
+            build_client_registration(TYPE_WORKER, 'abc', 'def').hex(),
+            '0400000000000000036162630000000000000003646566',
+        )
+
+    def test_build_client_registration_rejects_partial_auth(self) -> None:
+        with self.assertRaises(ValueError):
+            build_client_registration(TYPE_CLIENT, 'abc')
 
 
 class WorkerReconnectTests(unittest.IsolatedAsyncioTestCase):

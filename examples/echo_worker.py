@@ -33,7 +33,11 @@ def current_mode() -> str:
 
 
 async def main() -> None:
-    worker = Worker([])
+    worker = Worker(
+        [],
+        client_name=os.getenv('PERIODIC_WORKER_NAME'),
+        client_token=os.getenv('PERIODIC_WORKER_TOKEN'),
+    )
     tp = Transport('tcp://127.0.0.1:5000')
     mode = current_mode()
     if mode != 'Normal':

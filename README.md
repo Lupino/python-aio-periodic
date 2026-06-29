@@ -29,6 +29,25 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+Authenticated clients
+---------------------
+
+When `periodicd` runs with an auth file, pass the matching client identity:
+
+```python
+from aio_periodic import Client, Worker
+
+client = Client(client_name="client-a", client_token="token-a")
+worker = Worker(client_name="client-a", client_token="token-a")
+```
+
+Example server auth file line:
+
+```text
+client client-a token-a func1,func2
+worker worker-a token-worker-a func1,func2
+```
+
 Connection Lifecycle
 --------------------
 

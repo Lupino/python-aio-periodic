@@ -1,6 +1,6 @@
 import struct
 import json
-from typing import Dict, List, Union, cast
+from typing import Dict, List, Optional, Union, cast
 
 MAGIC_REQUEST = b'\x00REQ'
 MAGIC_RESPONSE = b'\x00RES'
@@ -8,6 +8,8 @@ MAGIC_RESPONSE = b'\x00RES'
 # Client Types
 TYPE_CLIENT = b'\x01'
 TYPE_WORKER = b'\x02'
+TYPE_AUTH_CLIENT = b'\x03'
+TYPE_AUTH_WORKER = b'\x04'
 
 # JSON-compatible payload types for safe serialization boundaries.
 JSONScalar = Union[str, int, float, bool, None]
@@ -62,6 +64,35 @@ def encode_str32(data: Encodable) -> bytes:
     """Encode data with a 4-byte length prefix."""
     b_data = to_bytes(data)
     return encode_int32(len(b_data)) + b_data
+
+
+def encode_binary_bytestring(data: Encodable) -> bytes:
+    """Encode data like Haskell Data.Binary strict ByteString."""
+    b_data = to_bytes(data)
+    return encode_int64(len(b_data)) + b_data
+
+
+def build_client_registration(
+    client_type: bytes,
+    client_name: Optional[Encodable] = None,
+    client_token: Optional[Encodable] = None,
+) -> bytes:
+    """Build the legacy or authenticated client registration payload."""
+    has_name = client_name is not None
+    has_token = client_token is not None
+    if has_name != has_token:
+        raise ValueError(
+            'client_name and client_token must be provided together')
+    if not has_name:
+        return client_type
+    if client_type == TYPE_CLIENT:
+        auth_type = TYPE_AUTH_CLIENT
+    elif client_type == TYPE_WORKER:
+        auth_type = TYPE_AUTH_WORKER
+    else:
+        raise ValueError(f'unknown client type: {client_type!r}')
+    return (auth_type + encode_binary_bytestring(cast(Encodable, client_name))
+            + encode_binary_bytestring(cast(Encodable, client_token)))
 
 
 def encode_int8(n: int = 0) -> bytes:

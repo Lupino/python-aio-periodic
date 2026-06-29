@@ -9,7 +9,10 @@ def current_mode() -> str:
 
 
 async def main() -> None:
-    client = Client()
+    client = Client(
+        client_name=os.getenv('PERIODIC_CLIENT_NAME'),
+        client_token=os.getenv('PERIODIC_CLIENT_TOKEN'),
+    )
     tp = Transport('tcp://127.0.0.1:5000')
     mode = current_mode()
     if mode != 'Normal':

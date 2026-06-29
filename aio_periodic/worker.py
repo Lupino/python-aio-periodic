@@ -67,9 +67,15 @@ class Worker(BaseClient):
     executor: Optional[Executor]
     _stopping: bool
 
-    def __init__(self, enabled_tasks: Optional[List[str]] = None) -> None:
+    def __init__(
+        self,
+        enabled_tasks: Optional[List[str]] = None,
+        client_name: Optional[str] = None,
+        client_token: Optional[str] = None,
+    ) -> None:
         BaseClient.__init__(self, TYPE_WORKER, self._message_callback,
-                            self._do_on_connected)
+                            self._do_on_connected, None, client_name,
+                            client_token)
 
         self.defrsps = {}
         self.lockers = {}
@@ -470,11 +476,15 @@ class WorkerCluster(BaseCluster):
 
     def __init__(self,
                  entrypoints: List[str],
-                 enabled_tasks: Optional[List[str]] = None) -> None:
+                 enabled_tasks: Optional[List[str]] = None,
+                 client_name: Optional[str] = None,
+                 client_token: Optional[str] = None) -> None:
         BaseCluster.__init__(self,
                              Worker,
                              entrypoints,
-                             enabled_tasks=enabled_tasks)
+                             enabled_tasks=enabled_tasks,
+                             client_name=client_name,
+                             client_token=client_token)
 
     def set_enable_tasks(self, enabled_tasks: List[str]) -> None:
         self.run_sync('set_enable_tasks', enabled_tasks)
