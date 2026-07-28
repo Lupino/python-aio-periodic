@@ -1,3 +1,5 @@
+"""Provide per-message request agents for periodic client communication."""
+
 import asyncio
 from binascii import crc32
 from collections import deque
@@ -11,9 +13,16 @@ if TYPE_CHECKING:
 
 
 class Agent(object):
-    """
-    Handles message sending and receiving for a specific message ID (msgid).
-    Acts as a bridge between the BaseClient and specific job tasks.
+    """Coordinate request and response data for one client message ID.
+
+    The agent owns a bounded FIFO response buffer and the waiters consuming it.
+    It is registered with ``BaseClient`` only for the lifetime of its context.
+
+    Args:
+        client: Client that owns this agent and its transport locks.
+        timeout: Maximum seconds to wait for one response.
+        autoid: Whether to allocate a unique message ID on entry. Disable this
+            only for reserved protocol commands.
     """
     msgid: bytes
     _buffer: Deque[bytes]
@@ -26,8 +35,15 @@ class Agent(object):
                  client: 'BaseClient',
                  timeout: int = 10,
                  autoid: bool = True) -> None:
+        """Initialize an unregistered agent.
+
+        Args:
+            client: Client that owns this agent.
+            timeout: Maximum seconds to wait for a response.
+            autoid: Whether entering the context allocates a message ID.
+        """
         self.msgid = b''
-        # Use deque for O(1) appends and pops on both ends
+        # Deques preserve FIFO delivery while keeping both buffer operations O(1).
         self._buffer = deque()
         self._waiters = deque()
         self.client = client
@@ -35,7 +51,11 @@ class Agent(object):
         self.autoid = autoid
 
     def __enter__(self) -> 'Agent':
-        """Registers the agent with the client synchronously."""
+        """Register the agent with the client synchronously.
+
+        Returns:
+            The registered agent.
+        """
         if self.autoid:
             self.msgid = self.client.get_next_msgid()
         else:
@@ -51,14 +71,21 @@ class Agent(object):
         exc_val: Optional[BaseException],
         exc_tb: object,
     ) -> None:
-        """Unregisters the agent to prevent memory leaks."""
+        """Unregister the agent when its context exits.
+
+        Args:
+            exc_type: Exception type raised inside the context, if any.
+            exc_val: Exception instance raised inside the context, if any.
+            exc_tb: Traceback object for the exception, if any.
+        """
         if self.msgid:
             self.client.agents.pop(self.msgid, None)
 
     async def __aenter__(self) -> 'Agent':
-        """
-        Async context manager.
-        Acquires the msgid_locker to ensure thread-safe ID generation.
+        """Register the agent while serializing message ID allocation.
+
+        Returns:
+            The registered agent.
         """
         async with self.client.msgid_locker:
             return self.__enter__()
@@ -69,32 +96,49 @@ class Agent(object):
         exc_val: Optional[BaseException],
         exc_tb: object,
     ) -> None:
+        """Unregister the agent while holding the message ID lock.
+
+        Args:
+            exc_type: Exception type raised inside the context, if any.
+            exc_val: Exception instance raised inside the context, if any.
+            exc_tb: Traceback object for the exception, if any.
+        """
         async with self.client.msgid_locker:
             self.__exit__(exc_type, exc_val, exc_tb)
 
     def feed_data(self, data: bytes) -> None:
-        """
-        Called by the client loop when data arrives for this agent.
-        Implements a FIFO queue that drops the oldest data if the buffer
-        exceeds the number of active waiters.
+        """Queue incoming data and wake the oldest pending receiver.
+
+        The buffer retains no more than the outstanding demand plus the newest
+        response, preventing unsolicited data from accumulating indefinitely.
+
+        Args:
+            data: Decoded payload received for this agent's message ID.
         """
         waiter_count = len(self._waiters)
 
-        # Prevent buffer from growing indefinitely if no one is listening.
-        # This keeps the buffer size roughly equal to the demand.
+        # Retain the newest unsolicited response so callers may send before
+        # they begin receiving, but discard older excess responses. This caps
+        # the backlog at one item beyond the currently waiting consumers.
         if len(self._buffer) > waiter_count:
-            self._buffer.pop()  # Remove the oldest item (right side)
+            self._buffer.pop()
 
-        self._buffer.appendleft(data)  # Add new item to front (left side)
+        self._buffer.appendleft(data)
 
         if waiter_count > 0:
-            waiter = self._waiters.pop()  # Wake up the longest-waiting task
+            # New waiters are added on the left, making the rightmost waiter
+            # the earliest one and preserving FIFO wake-up order.
+            waiter = self._waiters.pop()
             waiter.set()
 
     async def receive(self) -> bytes:
-        """
-        Waits for data to arrive in the buffer.
-        Raises TimeoutError if data does not arrive within self.timeout.
+        """Return the next buffered response or wait for one.
+
+        Returns:
+            The oldest response payload available to this agent.
+
+        Raises:
+            asyncio.TimeoutError: If no response arrives before ``timeout``.
         """
         try:
             # Use wait_for for broader compatibility (vs asyncio.timeout)
@@ -104,7 +148,11 @@ class Agent(object):
             raise
 
     async def _receive_internal(self) -> bytes:
-        """Internal helper to handle the wait logic."""
+        """Wait for a response when the buffer is empty.
+
+        Returns:
+            The oldest buffered response payload.
+        """
         if len(self._buffer) == 0:
             waiter = self._make_waiter()
             await waiter.wait()
@@ -112,13 +160,24 @@ class Agent(object):
         return self._buffer.pop()
 
     def buffer_len(self) -> int:
+        """Return the number of buffered response payloads.
+
+        Returns:
+            Current response-buffer length.
+        """
         return len(self._buffer)
 
     async def send(self,
                    cmd: Union[Command, bytes],
                    force: bool = False) -> None:
-        """
-        Encodes and sends a command via the client's transport.
+        """Encode and send a command through the client transport.
+
+        Args:
+            cmd: Protocol command or already-encoded command bytes.
+            force: Whether to send without waiting for an active connection.
+
+        Raises:
+            Exception: Propagates a transport write or drain failure.
         """
         if not force:
             await self.client.connected_wait()
@@ -128,7 +187,7 @@ class Agent(object):
             if self.msgid:
                 payload = self.msgid + payload
 
-            # Prepare packet: Magic + Size + CRC + Payload
+            # The wire format prefixes each payload with its magic, size, and CRC.
             size_bytes = encode_int32(len(payload))
             crc_val = crc32(to_bytes(payload))
             crc_bytes = encode_int32(crc_val)
@@ -151,7 +210,11 @@ class Agent(object):
                 raise e
 
     def _make_waiter(self) -> asyncio.Event:
-        """Creates a new event waiter and adds it to the queue."""
+        """Create and enqueue a receiver notification event.
+
+        Returns:
+            Event that is set when data is available for a waiting receiver.
+        """
         waiter = asyncio.Event()
         self._waiters.appendleft(waiter)
         return waiter

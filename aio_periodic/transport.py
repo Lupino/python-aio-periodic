@@ -1,3 +1,10 @@
+"""Provide plain, RSA, and AES stream transports for periodic workers.
+
+The RSA handshake authenticates the remote server before optional AES session
+encryption begins.  Secure stream wrappers preserve the ``asyncio`` reader and
+writer interfaces so callers do not need mode-specific I/O code.
+"""
+
 import asyncio
 import hmac
 import logging
@@ -8,7 +15,7 @@ from enum import IntEnum
 from typing import Tuple, Union
 from functools import partial
 
-# Import cryptography components
+# Keep protocol sizes explicit: peers must use the same wire framing values.
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, \
@@ -18,7 +25,7 @@ from cryptography.hazmat.backends import default_backend
 
 logger = logging.getLogger('aio_periodic.transport')
 
-# Constants matching Haskell configuration
+# These values are part of the wire protocol shared with the Haskell server.
 AES_KEY_SIZE = 32
 AES_IV_SIZE = 16
 AES_TAG_SIZE = 32
@@ -79,7 +86,8 @@ class SecureStreamReader(asyncio.StreamReader):
                  private_key: RSAPrivateKey,
                  mode: RSAMode,
                  session_key: bytes = b''):
-        # Initialize parent to set up internals
+        # Initialize the base reader because asyncio consumers inspect its
+        # inherited state even though encrypted reads use the wrapped reader.
         super().__init__()
 
         self.reader = reader
@@ -89,7 +97,8 @@ class SecureStreamReader(asyncio.StreamReader):
         self.rsa_block_size: int = private_key.key_size // 8
         self._loop = asyncio.get_running_loop()
 
-        # Internal buffer to store decrypted data that hasn't been consumed yet
+        # A decrypted packet can exceed the caller's requested length, so retain
+        # its remainder for the next read without splitting encrypted packets.
         self._decrypted_buffer = bytearray()
 
     async def read(self, n: int = -1) -> bytes:
@@ -97,7 +106,7 @@ class SecureStreamReader(asyncio.StreamReader):
             return await self.reader.read(n)
 
         try:
-            # 1. If we have buffered data, return it first
+            # Return previously decrypted data before reading another packet.
             if self._decrypted_buffer:
                 if n == -1:
                     data = bytes(self._decrypted_buffer)
@@ -109,9 +118,8 @@ class SecureStreamReader(asyncio.StreamReader):
                     del self._decrypted_buffer[:available]
                     return data
 
-            # 2. If buffer is empty, fetch one new chunk
-            # Note: We do not loop here; read() typically returns whatever is
-            # available
+            # ``read`` may return a single logical packet; only ``readexactly``
+            # is responsible for accumulating enough data to satisfy a length.
             if self.mode == RSAMode.RSA:
                 return await self._read_rsa()
 
@@ -133,7 +141,8 @@ class SecureStreamReader(asyncio.StreamReader):
 
         while len(self._decrypted_buffer) < n:
             try:
-                # Fetch next logical chunk
+                # Decrypt complete logical packets until the requested length is
+                # available in the plaintext buffer.
                 if self.mode == RSAMode.RSA:
                     chunk = await self._read_rsa()
                 elif self.mode == RSAMode.AES:
@@ -146,7 +155,7 @@ class SecureStreamReader(asyncio.StreamReader):
                 self._exception = e
                 raise
 
-            # Handle EOF
+            # Match asyncio's EOF contract while preserving partial plaintext.
             if not chunk:
                 partial_data = bytes(self._decrypted_buffer)
                 self._decrypted_buffer = bytearray()
@@ -154,13 +163,13 @@ class SecureStreamReader(asyncio.StreamReader):
 
             self._decrypted_buffer.extend(chunk)
 
-        # Extract exactly n bytes
+        # Leave any excess plaintext for the next caller.
         data = self._decrypted_buffer[:n]
         del self._decrypted_buffer[:n]
         return bytes(data)
 
     async def _read_rsa(self) -> bytes:
-        # RSA decryption requires reading the exact full ciphertext block
+        # OAEP output always occupies one RSA modulus-sized ciphertext block.
         encrypted_data = await self.reader.readexactly(self.rsa_block_size)
         if not encrypted_data:
             return b''
@@ -174,14 +183,15 @@ class SecureStreamReader(asyncio.StreamReader):
                              label=None)))
 
     async def _read_aes(self) -> bytes:
-        # 1. Read Packet Length (8 bytes Int64 - BigEndian)
+        # AES packets are length-prefixed so stream boundaries cannot alter the
+        # IV, ciphertext, and authentication-tag split.
         len_bytes = await self.reader.readexactly(8)
         pkt_len = struct.unpack('>Q', len_bytes)[0]
 
         if pkt_len < AES_IV_SIZE + AES_TAG_SIZE or pkt_len > MAX_PACKET_SIZE:
             raise ValueError(f"Packet length {pkt_len} exceeds max allowed.")
 
-        # 2. Read Payload (IV + Ciphertext)
+        # Validate before allocating or decrypting attacker-controlled payloads.
         payload = await self.reader.readexactly(pkt_len)
 
         mv = memoryview(payload)
@@ -193,7 +203,8 @@ class SecureStreamReader(asyncio.StreamReader):
         if not hmac.compare_digest(tag, expected_tag):
             raise ValueError("Invalid AES packet authentication tag")
 
-        # 3. Decrypt
+        # Authenticate the ciphertext before CTR decryption, which otherwise
+        # provides confidentiality but no tamper detection.
         def _decrypt_sync() -> bytes:
             cipher = Cipher(algorithms.AES(self.session_key),
                             modes.CTR(iv),
@@ -239,6 +250,8 @@ class SecureStreamWriter(asyncio.StreamWriter):
             raise
 
     def _write_rsa(self, data: bytes) -> None:
+        # OAEP accepts less than one modulus block of plaintext, so split a
+        # stream write before encrypting each independently framed block.
         for i in range(0, len(data), self.rsa_max_plaintext):
             chunk = data[i:i + self.rsa_max_plaintext]
             encrypted = self.public_key.encrypt(
@@ -351,6 +364,8 @@ class RSATransport(BaseTransport):
             my_pub = self.private_key.public_key()
             my_fp = self._get_fingerprint(my_pub)
             nonce = os.urandom(HANDSHAKE_NONCE_SIZE)
+            # The nonce makes the server proof specific to this connection and
+            # prevents replaying a proof captured from an earlier handshake.
             await self._send_oaep(raw_writer, my_fp + nonce)
 
             server_fp_incoming = await self._recv_oaep(raw_reader)
@@ -364,17 +379,19 @@ class RSATransport(BaseTransport):
             if not hmac.compare_digest(server_proof, expected_proof):
                 raise ConnectionError("Server proof mismatch!")
 
+            # Bind the server challenge to this client's public-key identity.
             client_proof = hashlib.sha256(CLIENT_PROOF_DOMAIN +
                                           server_challenge + my_fp).digest()
             await self._send_oaep(raw_writer, client_proof)
 
             logger.info("RSA Handshake successful. Server verified.")
 
-            # 4. Mode Negotiation
+            # Both peers must agree on the post-handshake framing mode.
             mode_byte = struct.pack('B', self.mode.value)
             await self._send_oaep(raw_writer, mode_byte)
 
-            # 5. Key Exchange
+            # A fresh AES key confines a compromised session key to one
+            # connection rather than all future connections.
             session_key = b''
             if self.mode == RSAMode.AES:
                 session_key = os.urandom(AES_KEY_SIZE)

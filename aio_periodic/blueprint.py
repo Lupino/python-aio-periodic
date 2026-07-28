@@ -21,6 +21,7 @@ class Blueprint(object):
     worker: Optional['Worker']
 
     def __init__(self) -> None:
+        # Keep registrations until Worker.blueprint() attaches this blueprint.
         self.tasks = {}
         self.broadcast_tasks = []
         self.defrsps = {}
@@ -46,6 +47,7 @@ class Blueprint(object):
             defrsp = DoneResponse()
 
         if self.worker:
+            # A bound blueprint must update the live worker immediately.
             await self.worker.add_func(func, task, defrsp, locker)
         else:
             self.tasks[func] = task
@@ -67,6 +69,7 @@ class Blueprint(object):
             defrsp = DoneResponse()
 
         if self.worker:
+            # Broadcast registration follows the same live-update path as tasks.
             await self.worker.broadcast(func, task, defrsp, locker)
         else:
             self.tasks[func] = task
@@ -85,7 +88,7 @@ class Blueprint(object):
         else:
             raise Exception("Can't call remove_func before worker is set")
 
-    # Decorator
+    # Decorators run during module import, before a worker is normally attached.
     def func(
         self,
         func_name: str,
@@ -106,6 +109,8 @@ class Blueprint(object):
             defrsp = DoneResponse()
 
         def _func(task: TaskFunc) -> TaskFunc:
+            # Decorated tasks are collected before Worker.blueprint() transfers
+            # the blueprint state to its reconnect-aware task registry.
             self.tasks[func_name] = task
             self.defrsps[func_name] = defrsp
 

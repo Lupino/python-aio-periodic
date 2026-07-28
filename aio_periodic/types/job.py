@@ -1,12 +1,15 @@
+"""Binary payload representation used by periodic job messages."""
+
 from typing import Union
 from .utils import (encode_str8, encode_str32, encode_int32, encode_int64,
                     decode_int8, decode_int32, decode_int64, encode_int8)
 
 
 class Job(object):
-    """
-    Represents a Job payload for the periodic system.
-    Handles serialization (pack) and deserialization (build).
+    """Represent a periodic job payload and its wire-format fields.
+
+    ``func`` and ``name`` retain their original byte representation after
+    deserialization so binary identifiers can be submitted without loss.
     """
     func: Union[str, bytes]
     name: Union[str, bytes]
@@ -22,6 +25,16 @@ class Job(object):
                  sched_at: int = 0,
                  count: int = 0,
                  timeout: int = 0) -> None:
+        """Initialize a job payload.
+
+        Args:
+            func: Function identifier to run.
+            name: Job identifier that distinguishes submitted work.
+            workload: Opaque data passed to the function.
+            sched_at: Unix timestamp when the job becomes eligible to run.
+            count: Optional execution or retry count.
+            timeout: Optional execution timeout in seconds.
+        """
         self.func = func
         self.name = name
         self.workload = workload
@@ -30,11 +43,15 @@ class Job(object):
         self.timeout = timeout
 
     def pack(self) -> bytes:
-        """Serialize the job into bytes."""
+        """Serialize the job into its protocol payload.
+
+        Returns:
+            The length-prefixed job fields followed by optional metadata.
+        """
         ver = 0
 
-        # Version bitmask logic:
-        # 1 = has count, 2 = has timeout
+        # The low bits declare which optional fixed-width fields follow the
+        # version byte, allowing older payloads to omit both fields.
         if self.count > 0:
             ver |= 1
         if self.timeout > 0:
@@ -48,6 +65,8 @@ class Job(object):
         elif ver == 3:
             buf = encode_int32(self.count) + encode_int32(self.timeout)
 
+        # The field order is part of the server protocol and is mirrored by
+        # build(); changing it would make persisted and in-flight jobs invalid.
         return b''.join([
             encode_str8(self.func),
             encode_str8(self.name),
@@ -58,27 +77,32 @@ class Job(object):
 
     @classmethod
     def build(cls, payload: bytes) -> 'Job':
-        """Deserialize bytes into a Job object."""
-        # 1. Parse Function Name (1-byte length prefix)
+        """Deserialize a protocol payload into a job.
+
+        Args:
+            payload: Encoded job bytes received from the periodic server.
+
+        Returns:
+            The decoded job with byte-valued function and job identifiers.
+        """
+        # Keep function and job names as bytes because callers may use binary
+        # identifiers; decoding here would change the serialized contract.
         h = decode_int8(payload[0:1])
         func = payload[1:h + 1]
         payload = payload[h + 1:]
 
-        # 2. Parse Job Name/ID (1-byte length prefix)
         h = decode_int8(payload[0:1])
         name = payload[1:h + 1]
         payload = payload[h + 1:]
 
-        # 3. Parse Workload (4-byte length prefix)
         h = decode_int32(payload[0:4])
         workload = payload[4:h + 4]
         payload = payload[h + 4:]
 
-        # 4. Parse Schedule Timestamp (8-byte int64)
         sched_at = decode_int64(payload[0:8])
         payload = payload[8:]
 
-        # 5. Parse Version and Extra Fields
+        # Optional fields are selected by the same bitmask used in pack().
         ver = decode_int8(payload[0:1])
         payload = payload[1:]
 
@@ -96,4 +120,9 @@ class Job(object):
         return cls(func, name, workload, sched_at, count, timeout)
 
     def __bytes__(self) -> bytes:
+        """Return the serialized job payload.
+
+        Returns:
+            The protocol bytes produced by :meth:`pack`.
+        """
         return self.pack()

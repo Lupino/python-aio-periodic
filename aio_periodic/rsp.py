@@ -1,3 +1,5 @@
+"""Define worker responses consumed by the periodic job runtime."""
+
 import json
 from typing import Union
 
@@ -5,9 +7,10 @@ from .types.utils import Encodable, JSONValue
 
 
 class DoneResponse:
-    """
-    Indicates that the job finished successfully.
-    Optionally carries a payload (buf) back to the caller.
+    """Represent a successfully completed job.
+
+    Args:
+        buf: Optional payload returned to the job caller.
     """
     buf: Encodable
 
@@ -16,15 +19,16 @@ class DoneResponse:
 
 
 class FailResponse:
-    """
-    Indicates that the job failed execution.
-    """
+    """Represent a job that failed without scheduling a retry."""
     pass
 
 
 class SchedLaterResponse:
-    """
-    Indicates that the job should be retried or rescheduled later.
+    """Represent a job that should run again after a delay.
+
+    Args:
+        delay: Number of seconds to wait before the next run.
+        count: Retry count associated with the rescheduled job.
     """
     delay: int
     count: int
@@ -34,25 +38,54 @@ class SchedLaterResponse:
         self.count = count
 
 
-# Type alias for valid return types from a worker function
+# Worker._process_job dispatches these marker objects to the corresponding
+# protocol command. Other return values are treated as successful payloads.
 ResponseTypes = Union[DoneResponse, FailResponse, SchedLaterResponse]
 
 
 def done(buf: Encodable = None) -> DoneResponse:
-    """Helper to create a DoneResponse."""
+    """Create a successful job response.
+
+    Args:
+        buf: Optional payload returned to the job caller.
+
+    Returns:
+        DoneResponse: A response marking the job as complete.
+    """
     return DoneResponse(buf)
 
 
 def jsonify(data: JSONValue) -> DoneResponse:
-    """Helper to create a DoneResponse with JSON-encoded data."""
+    """Create a successful response containing UTF-8 JSON data.
+
+    Args:
+        data: JSON-compatible data to encode as the response payload.
+
+    Returns:
+        DoneResponse: A response containing the encoded JSON payload.
+    """
+    # The Periodic protocol transports completion payloads as bytes rather
+    # than Python objects, so JSON responses must be encoded before dispatch.
     return DoneResponse(json.dumps(data).encode('utf-8'))
 
 
 def fail() -> FailResponse:
-    """Helper to create a FailResponse."""
+    """Create a failed job response.
+
+    Returns:
+        FailResponse: A response marking the job as failed.
+    """
     return FailResponse()
 
 
 def sched_later(delay: int, count: int = 0) -> SchedLaterResponse:
-    """Helper to create a SchedLaterResponse."""
+    """Create a response that reschedules a job.
+
+    Args:
+        delay: Number of seconds to wait before the next run.
+        count: Retry count associated with the rescheduled job.
+
+    Returns:
+        SchedLaterResponse: A response carrying the retry schedule.
+    """
     return SchedLaterResponse(delay, count)

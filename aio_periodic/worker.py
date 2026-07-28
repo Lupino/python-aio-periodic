@@ -1,3 +1,10 @@
+"""Provide Periodic workers that register tasks and execute assigned jobs.
+
+Workers keep one protocol agent for each available execution slot. This lets
+the server distribute work without allowing pending assignments to exceed the
+local concurrency limit.
+"""
+
 import asyncio
 import logging
 import signal
@@ -24,9 +31,10 @@ logger = logging.getLogger(__name__)
 
 
 class GrabAgent(object):
-    """
-    Manages the state of a specific agent's 'GrabJob' request.
-    Handles timeouts to prevent an agent from getting stuck waiting for a job.
+    """Track the outstanding job request for one reusable protocol agent.
+
+    Args:
+        agent: Protocol agent used to request and acknowledge assignments.
     """
     agent: Agent
     sent_timer: int
@@ -36,7 +44,7 @@ class GrabAgent(object):
         self.sent_timer = 0
 
     async def safe_send(self) -> None:
-        """Sends a GrabJob command and updates the timer."""
+        """Request a job and record when the request was successfully sent."""
         try:
             await self.agent.send(cmd.GrabJob())
             self.sent_timer = int(time())
@@ -44,7 +52,7 @@ class GrabAgent(object):
             logger.exception(e)
 
     def is_timeout(self) -> bool:
-        """Checks if the grab request has timed out (5 seconds)."""
+        """Return whether the outstanding job request is older than 5 seconds."""
         return self.sent_timer + 5 < int(time())
 
     async def send_assigned(self) -> None:
@@ -57,6 +65,12 @@ class GrabAgent(object):
 
 
 class Worker(BaseClient):
+    """Register tasks and execute work assigned by a Periodic server.
+
+    A worker reserves one agent per local pool slot. Each agent is returned to
+    the grab queue only after its job reaches a terminal state, which prevents
+    concurrent assignments from sharing the same protocol channel.
+    """
     _tasks: Dict[str, TaskFunc]
     _broadcast_tasks: List[str]
     defrsps: Dict[str, ResponseTypes]
@@ -83,13 +97,19 @@ class Worker(BaseClient):
         self._broadcast_tasks = []
         self.enabled_tasks = list(enabled_tasks) if enabled_tasks else []
 
-        # Initialize containers
+        # The pool and queue require a running event loop, so work() owns
+        # their initialization rather than constructing them with the client.
         self.grab_agents = {}
         # Note: grab_queue and _pool are initialized in work()
         self.executor = None
         self._stopping = False
 
     def set_enable_tasks(self, enabled_tasks: List[str]) -> None:
+        """Limit this worker to the given task names.
+
+        Args:
+            enabled_tasks: Names of tasks the worker may register and execute.
+        """
         self.enabled_tasks = enabled_tasks
 
     def set_executor(self, executor: Executor) -> None:
@@ -111,6 +131,9 @@ class Worker(BaseClient):
             if not self.is_enabled(func):
                 continue
 
+            # Task registration is connection-scoped on the server. Retry until
+            # it succeeds so a transient reconnect cannot leave local handlers
+            # available but invisible to the scheduler.
             while True:
                 r = False
                 if func in self._broadcast_tasks:
@@ -144,12 +167,16 @@ class Worker(BaseClient):
     ) -> bool:
         """Registers a new task/function."""
         if defrsp is None:
+            # Every leased job needs a terminal protocol response. Failing by
+            # default prevents an unhandled task error from appearing complete.
             defrsp = FailResponse()
 
         r = False
         if self.connected:
             r = await self._add_func(func)
 
+        # Keep the local definition even when registration succeeds now; it
+        # must be re-advertised whenever the client reconnects.
         self._tasks[func] = task
         self.defrsps[func] = defrsp
         if locker:
@@ -240,6 +267,8 @@ class Worker(BaseClient):
         agents = [self.agent() for _ in range(size)]
         self.grab_queue = asyncio.Queue()
 
+        # Keep one protocol agent per execution slot. This bounds outstanding
+        # grab requests to the same capacity as the local task pool.
         for agent in agents:
             agent.__enter__()
             item = GrabAgent(agent)
@@ -256,12 +285,12 @@ class Worker(BaseClient):
         funcs: Optional[List[str]] = None,
         close_client: bool = True,
     ) -> None:
-        """
-        Graceful shutdown flow:
-        1) stop accepting new jobs
-        2) send CantDo for all functions
-        3) wait for in-flight jobs to finish
-        4) close network client
+        """Stop assignments, drain active jobs, and optionally close the client.
+
+        Args:
+            funcs: Task names to unregister. All registered tasks are used when
+                omitted.
+            close_client: Whether to close the protocol client after draining.
         """
         self.stop()
 
@@ -295,6 +324,8 @@ class Worker(BaseClient):
 
         def start_shutdown(sig_name: str) -> None:
             nonlocal shutdown_task
+            # Multiple signals may arrive while jobs are draining; they must
+            # share one shutdown task so CantDo is sent only once per worker.
             if shutdown_task is None:
                 logger.info(f'Received {sig_name}, graceful shutdown started')
                 shutdown_task = asyncio.create_task(self.graceful_shutdown())
@@ -324,6 +355,8 @@ class Worker(BaseClient):
             try:
                 loop.add_signal_handler(sig, mk_loop_signal_handler(sig_name))
             except NotImplementedError:
+                # asyncio signal handlers are unavailable on some event-loop
+                # implementations, so hand work back to the running loop.
                 signal.signal(sig, mk_sync_signal_handler(sig_name))
 
         try:
@@ -343,7 +376,8 @@ class Worker(BaseClient):
             logger.error(f'Grab agent not found for msgid={msgid!r}')
             return
 
-        # Reject immediately when saturated, do not queue execution.
+        # The server can dispatch before this worker asks again. Reject instead
+        # of locally queuing so another worker can claim the job promptly.
         if self._stopping or self._pool.is_full:
             try:
                 await agent.send_unassigned()
@@ -351,7 +385,8 @@ class Worker(BaseClient):
                 logger.exception(e)
             return
 
-        # Immediately try to grab next job while processing this one
+        # Refill a free slot before spawning so I/O while this task starts does
+        # not leave worker capacity idle.
         await self.next_grab()
 
         # Spawn the task execution in the pool.
@@ -370,7 +405,8 @@ class Worker(BaseClient):
         job: Optional[Job] = None
         try:
             await agent.send_assigned()
-            # Payload[0] is command, Payload[1:] is Job Handle/Args
+            # The first byte is the protocol command. Job owns decoding the
+            # remaining handle and arguments payload.
             job = Job(payload[1:], self)
             await self.process_job(job)
         except asyncio.CancelledError:
@@ -381,7 +417,9 @@ class Worker(BaseClient):
                 with suppress(Exception):
                     await job.fail()
         finally:
-            # Re-queue agent for next grab
+            # An agent represents one reusable protocol channel, not one job.
+            # It can request another assignment only after its current job has
+            # reached a terminal response or the worker begins shutdown.
             if self.connected and not self._stopping:
                 await agent.safe_send()
 
@@ -396,7 +434,8 @@ class Worker(BaseClient):
             async def process() -> None:
                 await self._process_job(job, task)
 
-            # Handle Locking if configured
+            # The locker is task-defined because different jobs may require
+            # different distributed concurrency limits or no lock at all.
             locker = self.lockers.get(job.func_name)
             if locker:
                 locker_name, count = locker(job)
@@ -469,9 +508,13 @@ class Worker(BaseClient):
 
 
 class WorkerCluster(BaseCluster):
-    """
-    Manages a cluster of Workers to distribute load or connect to
-    multiple Periodic servers.
+    """Coordinate workers connected to one or more Periodic servers.
+
+    Args:
+        entrypoints: Periodic server addresses used to create workers.
+        enabled_tasks: Optional task-name allowlist shared by all workers.
+        client_name: Optional client name sent during server registration.
+        client_token: Optional credential sent during server registration.
     """
 
     def __init__(self,
@@ -487,9 +530,22 @@ class WorkerCluster(BaseCluster):
                              client_token=client_token)
 
     def set_enable_tasks(self, enabled_tasks: List[str]) -> None:
+        """Apply a task-name allowlist to every worker in the cluster.
+
+        Args:
+            enabled_tasks: Names of tasks workers may register and execute.
+        """
         self.run_sync('set_enable_tasks', enabled_tasks)
 
     def is_enabled(self, func: str) -> bool:
+        """Return whether every worker permits a task.
+
+        Args:
+            func: Registered task name to check.
+
+        Returns:
+            True when all workers permit the task; otherwise, False.
+        """
 
         def reduce(acc: bool, a: bool) -> bool:
             return acc and a
@@ -527,6 +583,12 @@ class WorkerCluster(BaseCluster):
         funcs: Optional[List[str]] = None,
         close_client: bool = True,
     ) -> None:
+        """Gracefully stop every worker in the cluster.
+
+        Args:
+            funcs: Task names to unregister, or all registered tasks when None.
+            close_client: Whether workers close their clients after draining.
+        """
         await self.run('graceful_shutdown', funcs, close_client)
 
     # Decorator

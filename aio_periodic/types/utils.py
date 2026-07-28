@@ -1,11 +1,17 @@
+"""Provide serialization helpers for the aio-periodic wire protocol."""
+
 import struct
 import json
 from typing import Dict, List, Optional, Union, cast
 
+# The leading magic bytes distinguish request frames from response frames
+# before the receiver starts decoding the payload.
 MAGIC_REQUEST = b'\x00REQ'
 MAGIC_RESPONSE = b'\x00RES'
 
-# Client Types
+# These one-byte values are part of the protocol contract. Authenticated
+# clients use separate values because their registration frame carries name
+# and token byte strings after the type byte.
 TYPE_CLIENT = b'\x01'
 TYPE_WORKER = b'\x02'
 TYPE_AUTH_CLIENT = b'\x03'
@@ -21,7 +27,14 @@ Encodable = Union[BytesLike, str, JSONValue]
 
 
 def to_bytes(s: Encodable) -> bytes:
-    """Convert protocol payload values to bytes."""
+    """Convert a protocol payload value to its byte representation.
+
+    Args:
+        s: A supported payload value.
+
+    Returns:
+        The UTF-8, JSON, or raw-byte representation used on the wire.
+    """
     if isinstance(s, bytes):
         return s
     if isinstance(s, bytearray):
@@ -38,7 +51,14 @@ def to_bytes(s: Encodable) -> bytes:
 
 
 def to_str(s: Encodable) -> str:
-    """Convert protocol payload values to string."""
+    """Convert a protocol payload value to its text representation.
+
+    Args:
+        s: A supported payload value.
+
+    Returns:
+        The UTF-8 or JSON representation used for text-facing values.
+    """
     if isinstance(s, bytes):
         return s.decode('utf-8')
     if isinstance(s, bytearray):
@@ -55,19 +75,49 @@ def to_str(s: Encodable) -> str:
 
 
 def encode_str8(data: Encodable) -> bytes:
-    """Encode data with a 1-byte length prefix."""
+    """Encode data with an unsigned 8-bit length prefix.
+
+    Args:
+        data: The value to serialize.
+
+    Returns:
+        The length-prefixed byte sequence.
+
+    Raises:
+        ValueError: If the encoded data exceeds the 8-bit length limit.
+    """
     b_data = to_bytes(data)
     return encode_int8(len(b_data)) + b_data
 
 
 def encode_str32(data: Encodable) -> bytes:
-    """Encode data with a 4-byte length prefix."""
+    """Encode data with an unsigned 32-bit length prefix.
+
+    Args:
+        data: The value to serialize.
+
+    Returns:
+        The length-prefixed byte sequence.
+
+    Raises:
+        ValueError: If the encoded data exceeds the 32-bit length limit.
+    """
     b_data = to_bytes(data)
     return encode_int32(len(b_data)) + b_data
 
 
 def encode_binary_bytestring(data: Encodable) -> bytes:
-    """Encode data like Haskell Data.Binary strict ByteString."""
+    """Encode data like a Haskell Data.Binary strict ByteString.
+
+    The protocol uses an unsigned 64-bit length prefix for authenticated
+    registration fields, matching Data.Binary's strict ByteString encoding.
+
+    Args:
+        data: The value to serialize.
+
+    Returns:
+        The 64-bit length-prefixed byte sequence.
+    """
     b_data = to_bytes(data)
     return encode_int64(len(b_data)) + b_data
 
@@ -77,7 +127,20 @@ def build_client_registration(
     client_name: Optional[Encodable] = None,
     client_token: Optional[Encodable] = None,
 ) -> bytes:
-    """Build the legacy or authenticated client registration payload."""
+    """Build the legacy or authenticated client registration payload.
+
+    Args:
+        client_type: Legacy client or worker type identifier.
+        client_name: Optional authenticated client name.
+        client_token: Optional credential paired with ``client_name``.
+
+    Returns:
+        The protocol registration payload.
+
+    Raises:
+        ValueError: If only one credential is supplied or ``client_type`` is
+            not a supported legacy type.
+    """
     has_name = client_name is not None
     has_token = client_token is not None
     if has_name != has_token:
@@ -96,46 +159,125 @@ def build_client_registration(
 
 
 def encode_int8(n: int = 0) -> bytes:
-    """Encode integer to 8-bit big-endian bytes."""
+    """Encode an integer as unsigned 8-bit big-endian bytes.
+
+    Args:
+        n: The integer to encode.
+
+    Returns:
+        The encoded integer.
+
+    Raises:
+        ValueError: If ``n`` exceeds the unsigned 8-bit maximum.
+    """
+    # Explicit bounds checks produce a protocol-level error instead of
+    # exposing struct.error from the transport implementation.
     if n > 0xFF:
         raise ValueError(f"Data too large for int8: {n}")
     return struct.pack('>B', n)
 
 
 def encode_int16(n: int = 0) -> bytes:
-    """Encode integer to 16-bit big-endian bytes."""
+    """Encode an integer as unsigned 16-bit big-endian bytes.
+
+    Args:
+        n: The integer to encode.
+
+    Returns:
+        The encoded integer.
+
+    Raises:
+        ValueError: If ``n`` exceeds the unsigned 16-bit maximum.
+    """
     if n > 0xFFFF:
         raise ValueError(f"Data too large for int16: {n}")
     return struct.pack('>H', n)
 
 
 def encode_int32(n: int = 0) -> bytes:
-    """Encode integer to 32-bit big-endian bytes."""
+    """Encode an integer as unsigned 32-bit big-endian bytes.
+
+    Args:
+        n: The integer to encode.
+
+    Returns:
+        The encoded integer.
+
+    Raises:
+        ValueError: If ``n`` exceeds the unsigned 32-bit maximum.
+    """
     if n > 0xFFFFFFFF:
         raise ValueError(f"Data too large for int32: {n}")
     return struct.pack('>I', n)
 
 
 def encode_int64(n: int = 0) -> bytes:
-    """Encode integer to 64-bit big-endian bytes."""
+    """Encode an integer as unsigned 64-bit big-endian bytes.
+
+    Args:
+        n: The integer to encode.
+
+    Returns:
+        The encoded integer.
+    """
     return struct.pack('>Q', n)
 
 
 def decode_int8(n: bytes) -> int:
-    """Decode 8-bit big-endian bytes to integer."""
+    """Decode unsigned 8-bit big-endian bytes.
+
+    Args:
+        n: A one-byte encoded integer.
+
+    Returns:
+        The decoded integer.
+
+    Raises:
+        struct.error: If ``n`` is not exactly one byte.
+    """
     return cast(int, struct.unpack('>B', n)[0])
 
 
 def decode_int16(n: bytes) -> int:
-    """Decode 16-bit big-endian bytes to integer."""
+    """Decode unsigned 16-bit big-endian bytes.
+
+    Args:
+        n: A two-byte encoded integer.
+
+    Returns:
+        The decoded integer.
+
+    Raises:
+        struct.error: If ``n`` is not exactly two bytes.
+    """
     return cast(int, struct.unpack('>H', n)[0])
 
 
 def decode_int32(n: bytes) -> int:
-    """Decode 32-bit big-endian bytes to integer."""
+    """Decode unsigned 32-bit big-endian bytes.
+
+    Args:
+        n: A four-byte encoded integer.
+
+    Returns:
+        The decoded integer.
+
+    Raises:
+        struct.error: If ``n`` is not exactly four bytes.
+    """
     return cast(int, struct.unpack('>I', n)[0])
 
 
 def decode_int64(n: bytes) -> int:
-    """Decode 64-bit big-endian bytes to integer."""
+    """Decode unsigned 64-bit big-endian bytes.
+
+    Args:
+        n: An eight-byte encoded integer.
+
+    Returns:
+        The decoded integer.
+
+    Raises:
+        struct.error: If ``n`` is not exactly eight bytes.
+    """
     return cast(int, struct.unpack('>Q', n)[0])
