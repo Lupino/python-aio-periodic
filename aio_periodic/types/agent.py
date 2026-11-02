@@ -43,7 +43,8 @@ class Agent(object):
             autoid: Whether entering the context allocates a message ID.
         """
         self.msgid = b''
-        # Deques preserve FIFO delivery while keeping both buffer operations O(1).
+        # Deques preserve FIFO delivery while keeping both buffer operations
+        # O(1).
         self._buffer = deque()
         self._waiters = deque()
         self.client = client
@@ -179,15 +180,22 @@ class Agent(object):
         Raises:
             Exception: Propagates a transport write or drain failure.
         """
+        connection_version = self.client._connection_version
         if not force:
             await self.client.connected_wait()
 
         async with self.client.send_locker:
+            # A queued command belongs to the connection on which it started.
+            # It must never run ahead of a replacement connection's handshake.
+            if (connection_version != self.client._connection_version
+                    or (not force and not self.client.connected)):
+                raise ConnectionError('Connection closed before command send')
             payload = bytes(cmd)
             if self.msgid:
                 payload = self.msgid + payload
 
-            # The wire format prefixes each payload with its magic, size, and CRC.
+            # The wire format prefixes each payload with its magic, size, and
+            # CRC.
             size_bytes = encode_int32(len(payload))
             crc_val = crc32(to_bytes(payload))
             crc_bytes = encode_int32(crc_val)
@@ -201,12 +209,13 @@ class Agent(object):
             except Exception as e:
                 # Mark disconnected and proactively kick reconnect loop on
                 # transport write failures.
-                self.client.connected_evt.clear()
-                if not self.client._closing:
-                    writer_obj = self.client._writer
-                    if writer_obj:
-                        writer_obj.close()
-                    self.client.start_connect()
+                # A delayed error from retired I/O must not tear down the
+                # replacement connection installed while drain() was pending.
+                if writer is self.client._writer:
+                    self.client.connected_evt.clear()
+                    if not self.client._closing:
+                        writer.close()
+                        self.client.start_connect()
                 raise e
 
     def _make_waiter(self) -> asyncio.Event:

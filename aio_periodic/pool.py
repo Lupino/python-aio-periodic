@@ -4,7 +4,8 @@ from typing import AsyncIterator, Awaitable, Callable, Optional
 from contextlib import asynccontextmanager
 from .types.base_client import BaseClient
 
-# Initializers may perform asynchronous connection setup before yielding a client.
+# Initializers may perform asynchronous connection setup before yielding a
+# client.
 InitFunc = Callable[[], Awaitable[BaseClient]]
 
 
@@ -22,10 +23,12 @@ class Pool(object):
 
     def __init__(self, init: InitFunc, size: int, timeout: int = 0) -> None:
         self.init = init
-        # The client is shared, so this bounds simultaneous borrowers rather than
+        # The client is shared, so this bounds simultaneous borrowers rather
+        # than
         # creating one connection per slot.
         self._sem = asyncio.Semaphore(size)
-        # Serialize health checks and replacement so concurrent borrowers observe
+        # Serialize health checks and replacement so concurrent borrowers
+        # observe
         # one consistent client instance.
         self.locker = asyncio.Lock()
 
@@ -37,13 +40,15 @@ class Pool(object):
         """Internal method to validate or recreate the connection."""
         now = time()
 
-        # Expire before probing: a healthy connection must still be replaced once
+        # Expire before probing: a healthy connection must still be replaced
+        # once
         # its configured lifetime ends.
         if self._deadline > 0 and self.client and self._deadline < now:
             self.client.close()
             self.client = None
 
-        # A failed probe invalidates the shared client for the next initializer.
+        # A failed probe invalidates the shared client for the next
+        # initializer.
         if self.client:
             try:
                 await self.client.ping()
@@ -69,8 +74,10 @@ class Pool(object):
         WARNING: You must call pool.release() manually after use.
         Recommended: Use `async with pool.connection() as client:` instead.
         """
-        # Do not hold the creation lock while waiting for a borrowing slot; that
-        # would block clients already admitted by the semaphore from progressing.
+        # Do not hold the creation lock while waiting for a borrowing slot;
+        # that
+        # would block clients already admitted by the semaphore from
+        # progressing.
         await self._sem.acquire()
 
         async with self.locker:

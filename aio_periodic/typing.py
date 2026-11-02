@@ -1,4 +1,6 @@
-"""Define callback contracts shared by periodic task registration and execution."""
+"""
+Define callback contracts shared by periodic task registration and execution.
+"""
 
 from .job import Job
 from typing import Awaitable, Callable, Tuple, Union

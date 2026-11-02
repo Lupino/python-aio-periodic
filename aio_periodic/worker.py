@@ -52,7 +52,9 @@ class GrabAgent(object):
             logger.exception(e)
 
     def is_timeout(self) -> bool:
-        """Return whether the outstanding job request is older than 5 seconds."""
+        """
+        Return whether the outstanding job request is older than 5 seconds.
+        """
         return self.sent_timer + 5 < int(time())
 
     async def send_assigned(self) -> None:
@@ -135,6 +137,11 @@ class Worker(BaseClient):
             # it succeeds so a transient reconnect cannot leave local handlers
             # available but invisible to the scheduler.
             while True:
+                # Let the reconnect supervisor replace a dead connection;
+                # retrying CANDO here would keep that supervisor blocked.
+                if not self.connected:
+                    raise ConnectionError(
+                        "Connection lost while registering worker tasks")
                 r = False
                 if func in self._broadcast_tasks:
                     r = await self._broadcast(func)
@@ -144,7 +151,6 @@ class Worker(BaseClient):
                 if r:
                     break
 
-                # Retry delay
                 await asyncio.sleep(1)
 
         await asyncio.sleep(1)
@@ -285,7 +291,8 @@ class Worker(BaseClient):
         funcs: Optional[List[str]] = None,
         close_client: bool = True,
     ) -> None:
-        """Stop assignments, drain active jobs, and optionally close the client.
+        """Stop assignments, drain active jobs, and optionally close the
+        client.
 
         Args:
             funcs: Task names to unregister. All registered tasks are used when

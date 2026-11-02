@@ -51,7 +51,8 @@ class FuncStatus(TypedDict):
 
 StatusMap = Dict[str, FuncStatus]
 
-# Connection lifecycle callbacks are awaited so setup and teardown finish before
+# Connection lifecycle callbacks are awaited so setup and teardown finish
+# before
 # the client advances to the next connection state.
 OnConnectedFunc = Callable[[], Awaitable[None]]
 OnDisconnectedFunc = Callable[[], Awaitable[None]]
@@ -140,6 +141,7 @@ class BaseClient(object):
         self._closing = False
         self._reconnect_requested = False
         self._reconnect_task = None
+        self._connection_version = 0
 
         self.prefix = ''
         self.subfix = ''
@@ -218,7 +220,8 @@ class BaseClient(object):
 
     def start_processes(self) -> None:
         """Start the receive loop and the connection health-check task."""
-        # Each connection lifecycle gets its own receive and health-check tasks.
+        # Each connection lifecycle gets its own receive and health-check
+        # tasks.
         self._processes.append(asyncio.create_task(self.loop_agent()))
         self._processes.append(asyncio.create_task(self.check_alive()))
 
@@ -229,23 +232,31 @@ class BaseClient(object):
         self._processes.clear()
 
     async def connect(self, transport: Optional[BaseTransport] = None) -> bool:
-        """Connect to the server and complete the client registration handshake.
+        """Connect to the server and complete the client registration
+        handshake.
 
         Args:
-            transport: Transport for the first connection; later reconnects reuse
+            transport: Transport for the first connection; later reconnects
+                reuse
                 the existing transport.
 
         Returns:
             Whether the handshake completed successfully.
 
         Raises:
-            Exception: If an initial connection has no transport or the transport
+            Exception: If an initial connection has no transport or the
+                transport
                 cannot establish a valid connection.
         """
         if self._initialized:
-            # Reset current state before reconnecting, but keep an active
-            # reconnect loop alive if this connect() is invoked from it.
-            self.close(_cancel_reconnect_task=False)
+            # A manual connect takes ownership from automatic recovery. The
+            # supervisor only preserves itself when it calls connect directly.
+            self.close(_cancel_reconnect_task=(
+                asyncio.current_task() is not self._reconnect_task))
+            # Retired receive loops must lose ownership before dialing yields;
+            # otherwise their cleanup can start competing automatic recovery.
+            self._reader = None
+            self._writer = None
             # Ensure reconnect loop keeps retrying if this connect attempt
             # fails before transport establishment.
             self._closing = False
@@ -257,23 +268,44 @@ class BaseClient(object):
         if transport:
             self.transport = transport
 
-        # Establish connection via transport layer
+        # close() invalidates in-flight dials and handshakes, including ones
+        # started by an explicit connect rather than the retry supervisor.
+        connection_version = self._connection_version
         reader, writer = await self.transport.get()
+        if self._closing or connection_version != self._connection_version:
+            writer.close()
+            raise ConnectionError('Connection closed during initialization')
         self._writer = writer
         self._reader = reader
         self._closing = False
         self._reconnect_requested = False
 
-        # Handshake: Send client type
-        agent = Agent(self)
-        await agent.send(self._clientType, True)
+        try:
+            # Handshake: Send client type
+            agent = Agent(self)
+            await agent.send(self._clientType, True)
+            if self._closing or connection_version != self._connection_version:
+                writer.close()
+                raise ConnectionError(
+                    'Connection closed during initialization')
 
-        self.connected_evt.set()
-        self.start_processes()
+            self.connected_evt.set()
+            self.start_processes()
 
-        if self._on_connected:
-            await self._on_connected()
+            if self._on_connected:
+                await self._on_connected()
 
+            if (not self.connected
+                    or connection_version != self._connection_version):
+                writer.close()
+                raise ConnectionError(
+                    'Connection closed during initialization')
+        except asyncio.CancelledError:
+            # Cancellation during setup must not leave partial registrations
+            # advertised. An older setup must not close its replacement.
+            if connection_version == self._connection_version:
+                self.close(_cancel_reconnect_task=False)
+            raise
         return True
 
     def start_connect(self) -> None:
@@ -289,6 +321,9 @@ class BaseClient(object):
                     try:
                         logger.info('Reconnecting...')
                         await self.connect()
+                        if not self.connected:
+                            raise ConnectionError(
+                                "Connection lost during initialization")
                         logger.info('Connected')
                         not_connected = False
                     except Exception as e:
@@ -297,7 +332,9 @@ class BaseClient(object):
                     if not_connected:
                         await asyncio.sleep(delay)
             finally:
-                self._reconnect_task = None
+                # A cancelled supervisor may retire after its replacement.
+                if self._reconnect_task is asyncio.current_task():
+                    self._reconnect_task = None
 
         self._reconnect_task = asyncio.create_task(connect_loop())
 
@@ -314,11 +351,13 @@ class BaseClient(object):
 
             now = time()
 
-            # Any command response refreshes ping_at, so an extra ping is needless.
+            # Any command response refreshes ping_at, so an extra ping is
+            # needless.
             if self.ping_at + 10 > now:
                 continue
 
-            # A stale connection must be torn down so the receive loop can reconnect.
+            # A stale connection must be torn down so the receive loop can
+            # reconnect.
             if self.ping_at + 120 < now:
                 logger.warning("Connection timed out. Resetting.")
                 self.connected_evt.clear()
@@ -338,7 +377,8 @@ class BaseClient(object):
 
     def get_next_msgid(self) -> bytes:
         """Generate a unique message ID for agents."""
-        # Bound collision probing in case outstanding agents exhaust the ID space.
+        # Bound collision probing in case outstanding agents exhaust the ID
+        # space.
         for _ in range(1_000_000):
             self._last_msgid += 1
             if self._last_msgid > 0xFFFFFF00:
@@ -388,7 +428,8 @@ class BaseClient(object):
 
         async def receive_exact(n: int) -> bytes:
             try:
-                # Exact reads preserve protocol frame boundaries and surface EOF.
+                # Exact reads preserve protocol frame boundaries and surface
+                # EOF.
                 data = await reader.readexactly(n)
                 return data
             except asyncio.IncompleteReadError:
@@ -416,11 +457,13 @@ class BaseClient(object):
             while self.connected:
                 payload = await receive_packet()
 
-                # The first four bytes identify the agent awaiting this response.
+                # The first four bytes identify the agent awaiting this
+                # response.
                 msgid = payload[0:4]
                 payload = payload[4:]
 
-                # Job assignments are server-initiated; other payloads target agents.
+                # Job assignments are server-initiated; other payloads target
+                # agents.
                 command_byte = payload[0:1]
 
                 if command_byte == NO_JOB:
@@ -441,6 +484,15 @@ class BaseClient(object):
             if not isinstance(e, asyncio.CancelledError):
                 logger.error(f"Loop agent error: {e}")
         finally:
+            # A cancelled receive loop from an older connection must not
+            # clear state or schedule reconnects for its replacement.
+            if reader is not self._reader:
+                return
+            self.connected_evt.clear()
+            # Pending CANDO replies must unblock before connect() can finish
+            # and the supervisor can replace this failed connection.
+            for agent in list(self.agents.values()):
+                agent.feed_data(b'')
             if self._on_disconnected:
                 try:
                     ret = self._on_disconnected()
@@ -449,11 +501,12 @@ class BaseClient(object):
                 except Exception as e:
                     logger.error(f'on_disconnected error: {e}')
 
-            # Explicit close suppresses reconnect unless the caller requested it.
+            # Explicit close suppresses reconnect unless the caller requested
+            # it.
             reconnect = (not self._closing) or self._reconnect_requested
-            self._closing = False
-            self._reconnect_requested = False
             if reconnect:
+                self._closing = False
+                self._reconnect_requested = False
                 self.start_connect()
 
     @overload
@@ -489,10 +542,17 @@ class BaseClient(object):
 
         Returns:
             Raw response payload or the value returned by ``parse``.
+
+        Raises:
+            ConnectionError: If the connection closes before its response.
         """
         async with self.agent(timeout) as agent:
             await agent.send(command)
             payload = await agent.receive()
+            # A zero-length protocol response is our disconnect wake-up marker.
+            # Valid empty job results still contain the DATA opcode here.
+            if payload == b'':
+                raise ConnectionError('Connection closed before response')
             self.ping_at = time()  # Update activity timestamp
             if parse:
                 return parse(payload)
@@ -536,10 +596,12 @@ class BaseClient(object):
 
         Args:
             reconnect: Whether to start a new connection after closing.
-            _cancel_reconnect_task: Internal flag that preserves the active retry
+            _cancel_reconnect_task: Internal flag that preserves the active
+                retry
                 loop while it attempts another connection.
         """
         self._closing = True
+        self._connection_version += 1
         self._reconnect_requested = reconnect
         self.connected_evt.clear()
 
@@ -556,6 +618,12 @@ class BaseClient(object):
         # Empty payloads wake agents so their callers do not wait indefinitely.
         for agent in list(self.agents.values()):
             agent.feed_data(b'')
+
+        # A receive task cancelled before its first execution has no finally
+        # block to schedule recovery. Explicit requests must start it here.
+        if reconnect:
+            self._closing = False
+            self.start_connect()
 
     async def submit_job(
         self,
@@ -576,7 +644,8 @@ class BaseClient(object):
             sched_at: Unix timestamp at which to schedule the job.
             count: Number of times to run the job.
             timeout: Job timeout in seconds.
-            job: Existing job object, which takes precedence over individual fields.
+            job: Existing job object, which takes precedence over individual
+                fields.
 
         Returns:
             Whether the server accepted the job.
@@ -608,7 +677,8 @@ class BaseClient(object):
             sched_at: Unix timestamp at which to schedule the job.
             count: Number of times to run the job.
             timeout: Job timeout in seconds.
-            job: Existing job object, which takes precedence over individual fields.
+            job: Existing job object, which takes precedence over individual
+                fields.
             stream: Optional synchronous or asynchronous callback for job data.
 
         Returns:
@@ -762,7 +832,9 @@ class BaseClient(object):
 
 
 class BaseCluster(object):
-    """Route periodic-server operations across clients using consistent hashing."""
+    """
+    Route periodic-server operations across clients using consistent hashing.
+    """
     clients: List[BaseClient]
     entrypoints: List[str]
     hr: HashRingLike
@@ -961,7 +1033,8 @@ class BaseCluster(object):
             sched_at: Unix timestamp at which to schedule the job.
             count: Number of times to run the job.
             timeout: Job timeout in seconds.
-            job: Existing job object, which takes precedence over individual fields.
+            job: Existing job object, which takes precedence over individual
+                fields.
 
         Returns:
             Whether the selected server accepted the job.
@@ -991,7 +1064,8 @@ class BaseCluster(object):
             sched_at: Unix timestamp at which to schedule the job.
             count: Number of times to run the job.
             timeout: Job timeout in seconds.
-            job: Existing job object, which takes precedence over individual fields.
+            job: Existing job object, which takes precedence over individual
+                fields.
             stream: Optional synchronous or asynchronous callback for job data.
 
         Returns:

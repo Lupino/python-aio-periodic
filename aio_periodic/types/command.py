@@ -1,4 +1,6 @@
-"""Serialize Periodic Task System protocol commands sent by clients and workers."""
+"""
+Serialize Periodic Task System protocol commands sent by clients and workers.
+"""
 
 from typing import List, Tuple, Union
 from . import utils

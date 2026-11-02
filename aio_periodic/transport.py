@@ -97,7 +97,8 @@ class SecureStreamReader(asyncio.StreamReader):
         self.rsa_block_size: int = private_key.key_size // 8
         self._loop = asyncio.get_running_loop()
 
-        # A decrypted packet can exceed the caller's requested length, so retain
+        # A decrypted packet can exceed the caller's requested length, so
+        # retain
         # its remainder for the next read without splitting encrypted packets.
         self._decrypted_buffer = bytearray()
 
@@ -141,7 +142,8 @@ class SecureStreamReader(asyncio.StreamReader):
 
         while len(self._decrypted_buffer) < n:
             try:
-                # Decrypt complete logical packets until the requested length is
+                # Decrypt complete logical packets until the requested length
+                # is
                 # available in the plaintext buffer.
                 if self.mode == RSAMode.RSA:
                     chunk = await self._read_rsa()
@@ -191,7 +193,8 @@ class SecureStreamReader(asyncio.StreamReader):
         if pkt_len < AES_IV_SIZE + AES_TAG_SIZE or pkt_len > MAX_PACKET_SIZE:
             raise ValueError(f"Packet length {pkt_len} exceeds max allowed.")
 
-        # Validate before allocating or decrypting attacker-controlled payloads.
+        # Validate before allocating or decrypting attacker-controlled
+        # payloads.
         payload = await self.reader.readexactly(pkt_len)
 
         mv = memoryview(payload)

@@ -69,7 +69,8 @@ class Blueprint(object):
             defrsp = DoneResponse()
 
         if self.worker:
-            # Broadcast registration follows the same live-update path as tasks.
+            # Broadcast registration follows the same live-update path as
+            # tasks.
             await self.worker.broadcast(func, task, defrsp, locker)
         else:
             self.tasks[func] = task
@@ -88,7 +89,8 @@ class Blueprint(object):
         else:
             raise Exception("Can't call remove_func before worker is set")
 
-    # Decorators run during module import, before a worker is normally attached.
+    # Decorators run during module import, before a worker is normally
+    # attached.
     def func(
         self,
         func_name: str,
