@@ -781,6 +781,7 @@ class WorkerGracefulShutdownTests(unittest.IsolatedAsyncioTestCase):
             return b'ok'
 
         worker._tasks = {'echo': task, 'echo_later': task}
+        worker.connected_evt.set()
         worker.send_command_and_receive = AsyncMock(return_value=True)  # type: ignore[method-assign]
         worker.close = Mock()  # type: ignore[method-assign]
 

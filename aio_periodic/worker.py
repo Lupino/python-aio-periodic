@@ -105,6 +105,7 @@ class Worker(BaseClient):
         # Note: grab_queue and _pool are initialized in work()
         self.executor = None
         self._stopping = False
+        self._shutdown_reason: Optional[str] = None
 
     def set_enable_tasks(self, enabled_tasks: List[str]) -> None:
         """Limit this worker to the given task names.
@@ -137,6 +138,8 @@ class Worker(BaseClient):
             # it succeeds so a transient reconnect cannot leave local handlers
             # available but invisible to the scheduler.
             while True:
+                if self._stopping:
+                    return
                 # Let the reconnect supervisor replace a dead connection;
                 # retrying CANDO here would keep that supervisor blocked.
                 if not self.connected:
@@ -299,14 +302,23 @@ class Worker(BaseClient):
                 omitted.
             close_client: Whether to close the protocol client after draining.
         """
+        logger.warning(
+            'Graceful shutdown entered: source=%s connected=%s',
+            self._shutdown_reason or 'API', self.connected, stack_info=True)
         self.stop()
 
         def_funcs = list(self._tasks.keys())
         cant_do_funcs = funcs if funcs is not None else def_funcs
         for func in cant_do_funcs:
+            # Registrations belong to the lost connection. Do not wait for a
+            # replacement just to unregister tasks while the worker drains.
+            if not self.connected:
+                break
             try:
                 await self._cant_do(func)
             except Exception as e:
+                if not self.connected_evt.is_set():
+                    break
                 logger.exception(e)
 
         if hasattr(self, '_pool'):
@@ -334,6 +346,7 @@ class Worker(BaseClient):
             # Multiple signals may arrive while jobs are draining; they must
             # share one shutdown task so CantDo is sent only once per worker.
             if shutdown_task is None:
+                self._shutdown_reason = sig_name
                 logger.info(f'Received {sig_name}, graceful shutdown started')
                 shutdown_task = asyncio.create_task(self.graceful_shutdown())
 
